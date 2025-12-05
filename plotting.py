@@ -7,7 +7,8 @@ from datetime import datetime,timedelta
 from cartopy.mpl.ticker import LatitudeFormatter,LongitudeFormatter
 from matplotlib.colors import ListedColormap
 
-def plot_geo_ints(int_data, lat, lon, geo_bounds=None, latlon_ticks=True,
+def plot_geo_ints(int_data, lat, lon, shapes=None,
+    geo_bounds=None, latlon_ticks=True,
     int_labels=None, fig_path=None, cbar_ticks=False, colors=None,
     show=False, plot_spec={}):
     """
@@ -19,33 +20,40 @@ def plot_geo_ints(int_data, lat, lon, geo_bounds=None, latlon_ticks=True,
     :@param colors: list or dict mapping indeces present in int_data to
         matplotlib-valid colors
     """
-    ps = {"xlabel":"", "ylabel":"",
-            "title":"", "dpi":80, "norm":None,"figsize":(12,12),
-            "legend_ncols":1, "line_opacity":1, "cmap":"hsv",
-            "label_size":14, "title_size":20}
+    ps = {
+        "xlabel":"", "ylabel":"", "title":"", "dpi":80, "norm":None,
+        "figsize":(12,12), "legend_ncols":1, "line_opacity":1, "cmap":"hsv",
+        "label_size":14, "title_size":20, "shape_params":{"edgecolor":"black"},
+        "cartopy_feats":["land", "borders", "states"],
+        }
     ps.update(plot_spec)
     fig, ax = plt.subplots(subplot_kw={'projection': ccrs.PlateCarree()})
 
-    ax.add_feature(
-            cfeature.LAND,
-            linestyle=ps.get("border_style", "-"),
-            linewidth=ps.get("border_linewidth", 2),
-            edgecolor=ps.get("border_color", "black"),
-            )
+    if shapes:
+        ax.add_geometries(
+                shapes, ccrs.PlateCarree(), **ps.get("shape_params"))
 
-    ax.add_feature(
-            cfeature.BORDERS,
-            linestyle=ps.get("border_style", "-"),
-            linewidth=ps.get("border_linewidth", 2),
-            edgecolor=ps.get("border_color", "black"),
-            )
-    ax.add_feature(
-            cfeature.STATES,
-            linestyle=ps.get("border_style", "-"),
-            linewidth=ps.get("border_linewidth", 2),
-            edgecolor=ps.get("border_color", "black"),
-            )
-
+    if "land" in ps.get("cartopy_feats"):
+        ax.add_feature(
+                cfeature.LAND,
+                #linestyle=ps.get("border_style", "-"),
+                #linewidth=ps.get("border_linewidth", 2),
+                #edgecolor=ps.get("border_color", "black"),
+                )
+    if "borders" in ps.get("cartopy_feats"):
+        ax.add_feature(
+                cfeature.BORDERS,
+                linestyle=ps.get("border_style", "-"),
+                linewidth=ps.get("border_linewidth", 2),
+                edgecolor=ps.get("border_color", "black"),
+                )
+    if "states" in ps.get("cartopy_feats"):
+        ax.add_feature(
+                cfeature.STATES,
+                linestyle=ps.get("border_style", "-"),
+                linewidth=ps.get("border_linewidth", 2),
+                edgecolor=ps.get("border_color", "black"),
+                )
     if geo_bounds is None:
         geo_bounds = [np.amin(lon), np.amax(lon), np.amin(lat), np.amax(lat)]
     ax.set_extent(geo_bounds, crs=ccrs.PlateCarree())
@@ -99,7 +107,8 @@ def plot_geo_ints(int_data, lat, lon, geo_bounds=None, latlon_ticks=True,
     ## make a scale that centers ticks on their color bar increments
     if cbar_ticks:
         nunq = unq_ints.size
-        ticks = np.array(list(range(nunq))) * (nunq-1)/nunq + .5
+        ticks = np.linspace(0, nunq-1, nunq*2+1)[1::2]
+        #ticks = np.array(list(range(nunq))) * (nunq-1)/nunq + .5
         cbar.set_ticks(ticks)
         cbar.ax.tick_params(rotation=ps.get("cbar_tick_rotation", 0))
         cbar.set_ticklabels(ix_labels)

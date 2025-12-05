@@ -2,6 +2,7 @@ import numpy as np
 import pygrib
 import imageio.v2 as imageio
 import pickle as pkl
+import geopandas as gpd
 from pathlib import Path
 from multiprocessing import Pool
 from pprint import pprint
@@ -26,7 +27,7 @@ rlabels_pct = ["soilm-10", "soilm-40", "soilm-100", "soilm-200"]
 if __name__=="__main__":
     data_dir = Path("data")
     fig_dir = Path("figures/daily")
-    gif_dir = Path("figures/gifs")
+    #gif_dir = Path("figures/gifs")
     sportlis_dir = data_dir.joinpath("sportlis-2016")
     shapefile = data_dir.joinpath("shapefiles/c_15au13.shp")
     latlon = np.load(data_dir.joinpath("sportlis_latlon.npy"))
@@ -34,8 +35,8 @@ if __name__=="__main__":
 
     ## configure geographic and temporal ranges, and data features for which
     ## to calculate daily county-wise SMVI
-    #lat_bounds,lon_bounds,bbox_name = (32,38),(-87,-79),"EastTN"
-    lat_bounds,lon_bounds,bbox_name = (24.5,31.5),(-88,-80),"Florida"
+    lat_bounds,lon_bounds,bbox_name = (32,38),(-87,-79),"EastTN"
+    #lat_bounds,lon_bounds,bbox_name = (24.5,31.5),(-88,-80),"Florida"
 
     start_time = datetime(2016,9,30)
     end_time = datetime(2016,12,31)
@@ -46,7 +47,10 @@ if __name__=="__main__":
     new_poly_raster = False
     ## If True, re-calculates SMVI rather than using stored
     new_smvi = False
-    gif_fps = 8
+    plot_fractional_smvi = False
+    plot_binary_smvi = True
+    smvi_thresh = .8
+    #gif_fps = 8
 
     ## define output paths for the intermediate data files
     ts0 = start_time.strftime("%Y%m%d")
@@ -99,49 +103,99 @@ if __name__=="__main__":
     ## load the stored pkl files and plot
     pir,metadata,sub_slice,(lat,lon) = pkl.load(poly_raster_path.open("rb"))
     smvi,dates,soilm_labels = pkl.load(smvi_path.open("rb"))
-    smvi_frac = np.full(smvi.shape, np.nan)
-    for pix in np.unique(pir): ## iterating over polygons
-        if pix==-1:
-            continue
-        m_pix = pir==pix ## mask of this polygon
-        npx = np.count_nonzero(m_pix) ## pixels in this polygon
-        ## fraction of pixels in this polygon that have volatility
-        fsmvi = np.count_nonzero(smvi[:,m_pix,:]==1, axis=1) / npx
-        smvi_frac[:,m_pix,:] = fsmvi[:,np.newaxis]
 
-    plotted_files = {}
-    for fix,fstr in enumerate(soilm_labels):
-        plotted_files[fstr] = []
-        for tix,dt in enumerate(dates):
-            tstr = dt.strftime("%Y%m%d")
-            tstr2 = dt.strftime("%Y-%m-%d")
-            fig_path = fig_dir.joinpath(
-                    f"smvi_frac_{bbox_name}_{tstr}_{fstr}.png")
-            plot_geo_scalar(
-                data=smvi_frac[tix,:,:,fix],
-                latitude=lat,
-                longitude=lon,
-                plot_spec={
-                    "cmap":"RdYlGn_r",
-                    "title":f"{fstr} SMVI % per county ({tstr2})",
-                    "figsize":(24,16),
-                    "cbar_shrink":.9,
-                    "vmin":0,
-                    "vmax":1,
-                    },
-                latlon_ticks=False,
-                show=False,
-                fig_path=fig_path,
-                )
-            plotted_files[fstr].append(fig_path)
-            print(f"Generated {fig_path.as_posix()}")
+    ## get the relevant counties from the indeces in the metadata
+    gdf = gpd.read_file(shapefile)
+    polys = [gdf["geometry"][md["poly_idx"]] for md in metadata]
 
-    for fix,fstr in enumerate(plotted_files.keys()):
-        ts0 = dates[0].strftime("%Y%m%d")
-        tsf = dates[-1].strftime("%Y%m%d")
-        gif_file_path = gif_dir.joinpath(
-            f"smvi_frac_{bbox_name}_{ts0}-{tsf}_{fstr}.gif")
-        images = []
-        for p in plotted_files[fstr]:
-            images.append(imageio.imread(p))
-            imageio.mimsave(gif_file_path, images, duration=1/gif_fps)
+    fsmvi = None
+    if plot_fractional_smvi:
+        smvi_frac = np.full(smvi.shape, np.nan)
+        for pix in np.unique(pir): ## iterating over polygons
+            if pix==-1:
+                continue
+            m_pix = pir==pix ## mask of this polygon
+            npx = np.count_nonzero(m_pix) ## pixels in this polygon
+            ## fraction of pixels in this polygon that have volatility
+            fsmvi = np.count_nonzero(smvi[:,m_pix,:]==1, axis=1) / npx
+            smvi_frac[:,m_pix,:] = fsmvi[:,np.newaxis]
+
+        plotted_files = {}
+        for fix,fstr in enumerate(soilm_labels):
+            plotted_files[fstr] = []
+            for tix,dt in enumerate(dates):
+                tstr = dt.strftime("%Y%m%d")
+                tstr2 = dt.strftime("%Y-%m-%d")
+                fig_path = fig_dir.joinpath(
+                        f"smvi_frac_{bbox_name}_{tstr}_{fstr}.png")
+                plot_geo_scalar(
+                    data=smvi_frac[tix,:,:,fix],
+                    latitude=lat,
+                    longitude=lon,
+                    plot_spec={
+                        "cmap":"RdYlGn_r",
+                        "title":f"{fstr} SMVI % per county ({tstr2})",
+                        "figsize":(24,16),
+                        "cbar_shrink":.9,
+                        "vmin":0,
+                        "vmax":1,
+                        },
+                    latlon_ticks=False,
+                    show=False,
+                    fig_path=fig_path,
+                    )
+                plotted_files[fstr].append(fig_path)
+                print(f"Generated {fig_path.as_posix()}")
+
+    if plot_binary_smvi:
+        smvi_bin = np.full(smvi.shape, 0, dtype=np.uint8)
+        for pix in np.unique(pir): ## iterating over polygons
+            if pix==-1:
+                continue
+            m_pix = pir==pix ## mask of this polygon
+            npx = np.count_nonzero(m_pix) ## pixels in this polygon
+            ## fraction of pixels in this polygon that have volatility
+            fsmvi = np.count_nonzero(smvi[:,m_pix,:]==1, axis=1) / npx
+            smvi_bin[:,m_pix,:] = \
+                    (fsmvi[:,np.newaxis]>smvi_thresh).astype(int) + 1
+
+        plotted_files = {}
+        for fix,fstr in enumerate(soilm_labels):
+            plotted_files[fstr] = []
+            for tix,dt in enumerate(dates):
+                tstr = dt.strftime("%Y%m%d")
+                tstr2 = dt.strftime("%Y-%m-%d")
+                fig_path = fig_dir.joinpath(
+                        f"smvi_binary_{bbox_name}_{tstr}_{fstr}.png")
+                plot_geo_ints(
+                    int_data=smvi_bin[tix,:,:,fix],
+                    lat=lat,
+                    lon=lon,
+                    int_labels=[
+                        "Out of Domain",
+                        f"SMVI Fraction <= {smvi_thresh}",
+                        f"SMVI Fraction > {smvi_thresh}",
+                        ],
+                    fig_path=fig_path,
+                    latlon_ticks=False,
+                    shapes=polys,
+                    cbar_ticks=True,
+                    plot_spec={
+                        "cbar_pad":0.02,
+                        "cbar_orient":"horizontal",
+                        "cbar_shrink":.8,
+                        "cbar_fontsize":14,
+                        "title":f"Counties with >{smvi_thresh*100}% SMVI" + \
+                                f" {fstr} ({tstr2})",
+                        "tile_fontsize":18,
+                        "interpolation":"none",
+                        "shape_params":{
+                            "edgecolor":"silver",
+                            "facecolor":"none",
+                            "alpha":.85,
+                            },
+                        },
+                    colors=["#3D74B6", "#FBF5DE", "#DC3C22"],
+                    )
+                plotted_files[fstr].append(fig_path)
+                print(f"Generated {fig_path.as_posix()}")
