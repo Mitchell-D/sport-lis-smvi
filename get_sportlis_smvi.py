@@ -16,7 +16,7 @@ class SMVIConfig:
     SMVI is a boolean function such that it returns True when:
 
      - Daily big window average is greater than small window average for a
-       number of days.
+       number of days (drying_days).
      - The climatological percentile on the last day is below a cutoff
     """
     big_window_size:int=20
@@ -32,6 +32,9 @@ def get_sportlis_smvi(
         smvi_config:SMVIConfig=None,
         integrate_layers=True, layer_depths=None,
         nworkers=1, ngroups=4,
+        latitudes=None, longitudes=None,
+        hist_file_pattern="sportlis_HIST_{yyyymmdd}0000_d01.grb",
+        percentile_file_pattern="sportlis_vsm_percentile_{yyyymmdd}.grb2",
         ):
     """
     :@param hist_file_dir: Directory containing SPoRT LIS model state files
@@ -69,8 +72,8 @@ def get_sportlis_smvi(
         inclusively, and with F soil layers. dates is a list of datetime
         objects corresponding to each of the N data values
     """
-    fpat_hist = "sportlis_HIST_{yyyymmdd}0000_d01.grb" ## only 0z files
-    fpat_pct = "sportlis_vsm_percentile_{yyyymmdd}.grb2"
+    fphist = hist_file_pattern
+    fppct = percentile_file_pattern
 
     ## check the validity of layer-defininig arguments
     assert len(hist_record_indices)==len(percentile_record_indices)
@@ -103,17 +106,21 @@ def get_sportlis_smvi(
 
     ## explicitly calculate the needed file names given the earthdata scheme,
     ## and make sure they exist in the provided directories.
-    req_hist = [hist_file_dir.joinpath(fpat_hist.format(yyyymmdd=tstr))
+    req_hist = [hist_file_dir.joinpath(fphist.format(yyyymmdd=tstr))
                 for tstr in hist_dates]
-    req_pct = [percentile_file_dir.joinpath(fpat_pct.format(yyyymmdd=tstr))
+    req_pct = [percentile_file_dir.joinpath(fppct.format(yyyymmdd=tstr))
                 for tstr in pct_dates]
     for p in req_hist + req_pct:
         if not p.exists():
             raise ValueError(f"Missing required file: {p.as_posix()}")
 
     ## assume the grids are all uniform and extract coordinate arrays
-    with pygrib.open(req_hist[0]) as pgf:
-        lat,lon = pgf.message(1).latlons()
+    griblat,griblon = None,None
+    if latitudes is None or longitudes is None:
+        with pygrib.open(req_hist[0]) as pgf:
+            griblat,griblon = pgf.message(1).latlons()
+    lat = griblat if latitudes is None else latitudes
+    lon = griblon if longitudes is None else longitudes
 
     ## get the bounding box of the subgrid desired for analysis
     slice_bounds = get_bounding_latlon_slice(lat, lon, lat_bounds, lon_bounds)

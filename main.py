@@ -27,36 +27,76 @@ rlabels_pct = ["soilm-10", "soilm-40", "soilm-100", "soilm-200"]
 if __name__=="__main__":
     data_dir = Path("data")
     fig_dir = Path("figures/daily")
-    #gif_dir = Path("figures/gifs")
-    sportlis_dir = data_dir.joinpath("sportlis-2016")
+
+    ## directory where polygon raster arrays are stored
+    poly_raster_dir = data_dir.joinpath("poly")
+
+    ## directory where smvi results pickles are stored
+    smvi_dir = data_dir.joinpath("smvi")
+
+    ## longitude storage formats are inconsistent between some grids; just
+    ## supply a static save file of the full sportlis latlon domain.
+    latlon_file = data_dir.joinpath("sportlis_latlon.npy")
+    #sportlis_dir = data_dir.joinpath("sportlis-2016")
+    sportlis_dir = data_dir.joinpath("sportlis-2023")
+
+    ## shapefile defining polygons pixels, and a unique name for it
     shapefile = data_dir.joinpath("shapefiles/c_15au13.shp")
-    latlon = np.load(data_dir.joinpath("sportlis_latlon.npy"))
-    lat,lon = latlon[...,0],latlon[...,1]
+    poly_name = "counties"
 
     ## configure geographic and temporal ranges, and data features for which
     ## to calculate daily county-wise SMVI
-    lat_bounds,lon_bounds,bbox_name = (32,38),(-87,-79),"EastTN"
+    lat_bounds,lon_bounds,bbox_name = (28.,34.),(-96.,-87.),"Louisiana"
+    #lat_bounds,lon_bounds,bbox_name = (32,38),(-87,-79),"EastTN"
     #lat_bounds,lon_bounds,bbox_name = (24.5,31.5),(-88,-80),"Florida"
 
-    start_time = datetime(2016,9,30)
-    end_time = datetime(2016,12,31)
+    ## time bounds for smvi analysis
+    #start_time = datetime(2016,9,30) ## gatlinburg drought -> fire
+    #end_time = datetime(2016,12,31)
+    start_time = datetime(2023,6,6) ## louisiana flash drought
+    end_time = datetime(2023,8,1)
+
     ## labels of soil layers
     soilm_labels = ["soilm-10", "soilm-40", "soilm-100", "soilm-200"]
     layer_depths = [.1, .3, .6, 1.]
+
     ## If True, re-calculates raster rather than using stored
-    new_poly_raster = False
+    new_poly_raster = True
     ## If True, re-calculates SMVI rather than using stored
-    new_smvi = False
+    new_smvi = True
+
+    ## plotting options for smvi
     plot_fractional_smvi = False
     plot_binary_smvi = True
     smvi_thresh = .8
-    #gif_fps = 8
+
+    ## number of concurrent workers and number of subsets (groups) to split the
+    ## time series into. More groups need more memory, but fewer disc reads.
+    nworkers = 2
+    ngroups = 6
+
+    ## earthdata file naming scheme
+    #percentile_file_pattern="sportlis_vsm_percentile_{yyyymmdd}.grb2"
+    #hist_file_pattern="sportlis_HIST_{yyyymmdd}0000_d01.grb"
+    ## sc1 file naming scheme
+    percentile_file_pattern="vsm_percentile_{yyyymmdd}.grb2"
+    hist_file_pattern="LIS_HIST_{yyyymmdd}0000.d01.grb2"
+
+    """   -----( end of normal configuration )-----   """
+
+    ## extract the geographic coords from the static file
+    latlon = np.load(latlon_file)
+    lat,lon = latlon[...,0],latlon[...,1]
 
     ## define output paths for the intermediate data files
     ts0 = start_time.strftime("%Y%m%d")
     tsf = end_time.strftime("%Y%m%d")
-    smvi_path = data_dir.joinpath(f"smvi/smvi_{bbox_name}_{ts0}_{tsf}.npy")
-    poly_raster_path = data_dir.joinpath(f"poly/poly-raster_{bbox_name}.pkl")
+    smvi_path = smvi_dir.joinpath(
+            f"smvi_{poly_name}_{bbox_name}_{ts0}_{tsf}.pkl")
+    poly_raster_path = poly_raster_dir.joinpath(
+            f"poly-raster_{poly_name}_{bbox_name}.pkl")
+    assert smvi_path.parent.exists(),smvi_path.parent.as_posix()
+    assert poly_raster_path.parent.exists(),poly_raster_path.parent.as_posix()
 
     ## generate a raster file assigning each pixel to a county polygon
     if new_poly_raster:
@@ -95,8 +135,12 @@ if __name__=="__main__":
             lat_bounds=lat_bounds,
             lon_bounds=lon_bounds,
             smvi_config=SMVIConfig(),
-            nworkers=4,
-            ngroups=10,
+            nworkers=nworkers,
+            ngroups=ngroups,
+            latitudes=lat,
+            longitudes=lon,
+            percentile_file_pattern=percentile_file_pattern,
+            hist_file_pattern=hist_file_pattern,
             )
         pkl.dump((smvi,dates,soilm_labels), smvi_path.open("wb"))
 
