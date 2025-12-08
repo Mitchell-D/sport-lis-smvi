@@ -26,7 +26,8 @@ rlabels_pct = ["soilm-10", "soilm-40", "soilm-100", "soilm-200"]
 
 if __name__=="__main__":
     data_dir = Path("data")
-    fig_dir = Path("figures/daily")
+    #fig_dir = Path("figures/daily")
+    fig_dir = Path("figures/weekly")
 
     ## directory where polygon raster arrays are stored
     poly_raster_dir = data_dir.joinpath("poly")
@@ -40,13 +41,20 @@ if __name__=="__main__":
     #sportlis_dir = data_dir.joinpath("sportlis-2016")
     sportlis_dir = data_dir.joinpath("sportlis-2023")
 
+    ## earthdata file naming scheme
+    #percentile_file_pattern="sportlis_vsm_percentile_{yyyymmdd}.grb2"
+    #hist_file_pattern="sportlis_HIST_{yyyymmdd}0000_d01.grb"
+    ## sc1 file naming scheme
+    percentile_file_pattern="vsm_percentile_{yyyymmdd}.grb2"
+    hist_file_pattern="LIS_HIST_{yyyymmdd}0000.d01.grb2"
+
     ## shapefile defining polygons pixels, and a unique name for it
     shapefile = data_dir.joinpath("shapefiles/c_15au13.shp")
     poly_name = "counties"
 
     ## configure geographic and temporal ranges, and data features for which
     ## to calculate daily county-wise SMVI
-    lat_bounds,lon_bounds,bbox_name = (28.,34.),(-96.,-87.),"Louisiana"
+    lat_bounds,lon_bounds,bbox_name = (28.,34.),(-96.,-87.8),"Louisiana"
     #lat_bounds,lon_bounds,bbox_name = (32,38),(-87,-79),"EastTN"
     #lat_bounds,lon_bounds,bbox_name = (24.5,31.5),(-88,-80),"Florida"
 
@@ -54,33 +62,31 @@ if __name__=="__main__":
     #start_time = datetime(2016,9,30) ## gatlinburg drought -> fire
     #end_time = datetime(2016,12,31)
     start_time = datetime(2023,6,6) ## louisiana flash drought
-    end_time = datetime(2023,8,1)
+    end_time = datetime(2023,10,31)
 
     ## labels of soil layers
     soilm_labels = ["soilm-10", "soilm-40", "soilm-100", "soilm-200"]
     layer_depths = [.1, .3, .6, 1.]
 
     ## If True, re-calculates raster rather than using stored
-    new_poly_raster = True
+    new_poly_raster = False
     ## If True, re-calculates SMVI rather than using stored
-    new_smvi = True
+    new_smvi = False
 
     ## plotting options for smvi
     plot_fractional_smvi = False
     plot_binary_smvi = True
-    smvi_thresh = .8
+    plot_pixelwise_smvi = True
+    smvi_thresh = .3
 
     ## number of concurrent workers and number of subsets (groups) to split the
     ## time series into. More groups need more memory, but fewer disc reads.
     nworkers = 2
     ngroups = 6
 
-    ## earthdata file naming scheme
-    #percentile_file_pattern="sportlis_vsm_percentile_{yyyymmdd}.grb2"
-    #hist_file_pattern="sportlis_HIST_{yyyymmdd}0000_d01.grb"
-    ## sc1 file naming scheme
-    percentile_file_pattern="vsm_percentile_{yyyymmdd}.grb2"
-    hist_file_pattern="LIS_HIST_{yyyymmdd}0000.d01.grb2"
+    ## optionally provide a exclusive day of the week to plot for weekly
+    #plot_day_of_week = None
+    plot_day_of_week = 1 ## tuesdays
 
     """   -----( end of normal configuration )-----   """
 
@@ -152,6 +158,51 @@ if __name__=="__main__":
     gdf = gpd.read_file(shapefile)
     polys = [gdf["geometry"][md["poly_idx"]] for md in metadata]
 
+    if plot_pixelwise_smvi:
+        plotted_files = {}
+        for fix,fstr in enumerate(soilm_labels):
+            plotted_files[fstr] = []
+            for tix,dt in enumerate(dates):
+                if plot_day_of_week and not dt.weekday()==plot_day_of_week:
+                    continue
+                tstr = dt.strftime("%Y%m%d")
+                tstr2 = dt.strftime("%Y-%m-%d")
+                fig_path = fig_dir.joinpath(
+                        f"smvi_pixelwise_{bbox_name}_{tstr}_{fstr}.png")
+                plot_geo_ints(
+                    int_data=smvi[tix,:,:,fix]+1,
+                    lat=lat,
+                    lon=lon,
+                    int_labels=[
+                        "Out of Domain",
+                        f"SMVI Fraction <= {smvi_thresh}",
+                        f"SMVI Fraction > {smvi_thresh}",
+                        ],
+                    fig_path=fig_path,
+                    latlon_ticks=False,
+                    shapes=polys,
+                    cbar_ticks=True,
+                    plot_spec={
+                        "cbar_pad":0.02,
+                        "cbar_orient":"horizontal",
+                        "cbar_shrink":.8,
+                        "cbar_fontsize":14,
+                        "tick_frequency":12,
+                        "tick_rotation":45,
+                        "title":f"SMVI {fstr} ({tstr2})",
+                        "tile_fontsize":18,
+                        "interpolation":"none",
+                        "shape_params":{
+                            "edgecolor":"silver",
+                            "facecolor":"none",
+                            "alpha":.85,
+                            },
+                        },
+                    colors=["#3D74B6", "#FBF5DE", "#DC3C22"],
+                    )
+                plotted_files[fstr].append(fig_path)
+                print(f"Generated {fig_path.as_posix()}")
+
     fsmvi = None
     if plot_fractional_smvi:
         smvi_frac = np.full(smvi.shape, np.nan)
@@ -171,7 +222,7 @@ if __name__=="__main__":
                 tstr = dt.strftime("%Y%m%d")
                 tstr2 = dt.strftime("%Y-%m-%d")
                 fig_path = fig_dir.joinpath(
-                        f"smvi_frac_{bbox_name}_{tstr}_{fstr}.png")
+                    f"smvi_frac_{bbox_name}_{poly_name}_{tstr}_{fstr}.png")
                 plot_geo_scalar(
                     data=smvi_frac[tix,:,:,fix],
                     latitude=lat,
@@ -182,6 +233,8 @@ if __name__=="__main__":
                         "figsize":(24,16),
                         "cbar_shrink":.9,
                         "vmin":0,
+                        "tick_frequency":12,
+                        "tick_rotation":45,
                         "vmax":1,
                         },
                     latlon_ticks=False,
@@ -207,10 +260,12 @@ if __name__=="__main__":
         for fix,fstr in enumerate(soilm_labels):
             plotted_files[fstr] = []
             for tix,dt in enumerate(dates):
+                if plot_day_of_week and not dt.weekday()==plot_day_of_week:
+                    continue
                 tstr = dt.strftime("%Y%m%d")
                 tstr2 = dt.strftime("%Y-%m-%d")
                 fig_path = fig_dir.joinpath(
-                        f"smvi_binary_{bbox_name}_{tstr}_{fstr}.png")
+                    f"smvi_binary_{bbox_name}_{poly_name}_{tstr}_{fstr}.png")
                 plot_geo_ints(
                     int_data=smvi_bin[tix,:,:,fix],
                     lat=lat,
@@ -229,6 +284,8 @@ if __name__=="__main__":
                         "cbar_orient":"horizontal",
                         "cbar_shrink":.8,
                         "cbar_fontsize":14,
+                        "tick_frequency":12,
+                        "tick_rotation":45,
                         "title":f"Counties with >{smvi_thresh*100}% SMVI" + \
                                 f" {fstr} ({tstr2})",
                         "tile_fontsize":18,

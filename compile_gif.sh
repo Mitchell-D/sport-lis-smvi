@@ -3,6 +3,9 @@
 ## example usage:
 ## ./compile_gif.sh "figures/daily/smvi_binary_EastTN_*_soilm-200.png" figures/gifs/smvi_binary_EastTN_soilm-200.gif
 
+## jon's gif format
+## convert -delay 75 figures/weekly/smvi_pixelwise_*soilm-100.png \( figures/weekly/smvi_pixelwise_20231031_soilm-100.png -delay 250 \) -loop 0 sportlis_smvi_la_20230606-20231031_anim_mitchell-pixelwise.gif
+
 ## defaults
 FPS=8
 COLORS=256

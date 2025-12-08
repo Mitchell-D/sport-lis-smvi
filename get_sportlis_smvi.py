@@ -1,5 +1,6 @@
 import numpy as np
 import pygrib
+from pprint import pprint
 from pathlib import Path
 from numpy.lib.stride_tricks import sliding_window_view
 from dataclasses import dataclass
@@ -118,7 +119,10 @@ def get_sportlis_smvi(
     griblat,griblon = None,None
     if latitudes is None or longitudes is None:
         with pygrib.open(req_hist[0]) as pgf:
+            print(f"Getting latlon from file")
             griblat,griblon = pgf.message(1).latlons()
+            griblat = griblat[::-1]
+            griblon = griblon[::-1]
     lat = griblat if latitudes is None else latitudes
     lon = griblon if longitudes is None else longitudes
 
@@ -170,9 +174,11 @@ def _get_smvi(
         with pygrib.open(p) as pgf:
             tmp_feats = []
             for rix in hist_rixs:
+                #pgf.seek(0)
+                #print(next(pgf).latlons())
                 pgf.seek(rix)
                 ## nldas convention is to index latitude low to high
-                x = pgf.readline().values.data[*slice_bounds][::-1]
+                x = pgf.readline().values.data[::-1][*slice_bounds]
                 ## hist files use 9999. as a mask value
                 if m_valid is None:
                     m_valid = ~np.isclose(x, 9999)
@@ -186,10 +192,12 @@ def _get_smvi(
         with pygrib.open(p) as pgf:
             tmp_feats = []
             for rix in pct_rixs:
+                #pgf.seek(0)
+                #print(next(pgf).latlons())
                 pgf.seek(rix)
                 ## nldas convention is to index latitude low to high
                 ## but i don't like that
-                x = pgf.readline().values.data[*slice_bounds][::-1]
+                x = pgf.readline().values.data[::-1][*slice_bounds]
                 tmp_feats.append(x[m_valid])
             pct.append(np.stack(tmp_feats, axis=-1))
     pct = np.stack(pct, axis=0)
@@ -199,8 +207,8 @@ def _get_smvi(
         hist = np.cumsum(hist*layer_depths, axis=-1) / np.cumsum(layer_depths)
 
     ## declare convolution filters according to the requested window sizes
-    fbig = np.ones(wbig)
-    fsmall = np.ones(wsmall)
+    fbig = np.ones(wbig) / wbig
+    fsmall = np.ones(wsmall) / wsmall
 
     ## get the moving averages for both the small and big window sizes
     mavg_big = np.apply_along_axis(

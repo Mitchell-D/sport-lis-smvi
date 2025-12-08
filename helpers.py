@@ -33,4 +33,11 @@ def get_bounding_latlon_slice(lat, lon, lat_bounds=None, lon_bounds=None):
             m_valid_y.size - np.argmax(m_valid_y[::-1]))
     slcx = slice(np.argmax(m_valid_x),
             m_valid_x.size - np.argmax(m_valid_x[::-1]))
+    '''
+    print(lat)
+    print(lon)
+    print(lat_bounds, lon_bounds)
+    print(slcy, slcx)
+    print()
+    '''
     return slcy,slcx
