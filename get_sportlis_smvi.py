@@ -6,6 +6,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 from dataclasses import dataclass
 from multiprocessing import Pool
 from datetime import datetime,timedelta
+from time import perf_counter
 
 from helpers import get_bounding_latlon_slice
 
@@ -36,6 +37,8 @@ def get_sportlis_smvi(
         latitudes=None, longitudes=None,
         hist_file_pattern="sportlis_HIST_{yyyymmdd}0000_d01.grb",
         percentile_file_pattern="sportlis_vsm_percentile_{yyyymmdd}.grb2",
+        return_source_files=False,
+        debug=False,
         ):
     """
     :@param hist_file_dir: Directory containing SPoRT LIS model state files
@@ -67,11 +70,15 @@ def get_sportlis_smvi(
         more groups there are, the less data is loaded into memory at once,
         but the higher the probability that a file will need to be read from
         the disc multiple times.
+    :@param return_source_files: If True, return the paths of files used to
+        generate the SMVI as a third element of the returned tuple.
 
     :@return: 2-tuple (smvi, dates) where smvi is an array of SMVI values
         shaped like (N,Y,X,F) for N days between start_time and end_time
         inclusively, and with F soil layers. dates is a list of datetime
-        objects corresponding to each of the N data values
+        objects corresponding to each of the N data values. If
+        return_source_files is True, returns 3-tuple like (smvi, dates, files)
+        where files is itself a 2-tuple (hist_files, percentile_files)
     """
     fphist = hist_file_pattern
     fppct = percentile_file_pattern
@@ -147,20 +154,71 @@ def get_sportlis_smvi(
         "wsmall":smvi_config.small_window_size,
         "ddays":smvi_config.drying_days,
         "pct_thresh":smvi_config.last_day_percentile_cutoff,
+        "debug":debug,
         } for i in range(ngroups)]
 
+    if debug:
+        print(f"{perf_counter():.3f} Initializing SMVI workers ")
     smvi = []
     with Pool(nworkers) as pool:
         for result in pool.imap(_mp_get_smvi, args):
+            if debug:
+                print(f"{perf_counter():.3f} Got results {result.shape} ")
             smvi.append(result)
-    return np.concatenate(smvi, axis=0),pct_datetimes
+    return np.concatenate(smvi,axis=0), pct_datetimes, (req_hist,req_pct)
+
+def load_sportlis_gribs(grib_paths, record_indices, slice_bounds=None,
+        return_original_shape=False, m_valid=None, mask_value=9999,
+        debug=False):
+    """
+    Given a list of grib files, extract all valid data within the index slice
+    bounds, and concatenate them into a (T, P, R) array for T time steps
+    (files), P pixels, and R records.
+
+    :@param grib_paths: List of sportlis style grib files (may be either
+        percentile or HIST files) that will be extracted in order.
+    :@param record_indices: Integer numbers of grib records to be extracted.
+    :@param slice_bounds: 2-tuple of slices of index bounds (y_slice, x_slice)
+    :@pram return_original_shape: If True, returns an array shaped like
+        (T, Y, X, R) with the original 2d shape (Y,X), not just valid pixels.
+    :@param m_valid: If provided, applies the mask to extract values associated
+        with True elements. Otherwise, masks values equal to mask_value.
+    :@param mask_value: If file data values are equal to this value, they are
+        masked. When return_original_shape is True, the associated values will
+        be replaced with NaN, or otherwise they are excluded from the P axis.
+
+    :@return: 2-tuple (data, valid_mask)
+    """
+    if slice_bounds is None:
+        slice_bounds = (slice(None), slice(None))
+    data = []
+    for p in grib_paths:
+        with pygrib.open(p) as pgf:
+            tmp_feats = []
+            for rix in record_indices:
+                pgf.seek(rix)
+                ## nldas convention is to index latitude low to high
+                x = pgf.readline().values.data[::-1][*slice_bounds]
+                ## hist files use 9999. as a mask value
+                if m_valid is None:
+                    m_valid = ~np.isclose(x, mask_value)
+                tmp_feats.append(x[m_valid])
+            data.append(np.stack(tmp_feats, axis=-1))
+    data = np.stack(data, axis=0)
+    if return_original_shape:
+        out_shape = (len(grib_paths), *m_valid.shape, len(record_indices))
+        out = np.full(out_shape, np.nan)
+        out[:,m_valid] = data
+    else:
+        out = data
+    return out,m_valid
 
 def _mp_get_smvi(args):
     return _get_smvi(**args)
 
 def _get_smvi(
     hist_paths, pct_paths, hist_rixs, pct_rixs, layer_depths, slice_bounds,
-    integrate_layers, wbig, wsmall, ddays, pct_thresh):
+    integrate_layers, wbig, wsmall, ddays, pct_thresh, debug=False):
     """
     Internal module method for retrieving SMVI given SPoRT LIS soil state and
     percentile files. You SHOULD NOT use this method directly... it is wrapped
@@ -168,39 +226,25 @@ def _get_smvi(
     temporally aligned files to be provided.
     """
     ## read all the state data into memory
-    hist = []
-    m_valid = None
-    for p in hist_paths:
-        with pygrib.open(p) as pgf:
-            tmp_feats = []
-            for rix in hist_rixs:
-                #pgf.seek(0)
-                #print(next(pgf).latlons())
-                pgf.seek(rix)
-                ## nldas convention is to index latitude low to high
-                x = pgf.readline().values.data[::-1][*slice_bounds]
-                ## hist files use 9999. as a mask value
-                if m_valid is None:
-                    m_valid = ~np.isclose(x, 9999)
-                tmp_feats.append(x[m_valid])
-            hist.append(np.stack(tmp_feats, axis=-1))
-    hist = np.stack(hist, axis=0)
-
+    hist,m_valid = load_sportlis_gribs(
+            grib_paths=hist_paths,
+            record_indices=hist_rixs,
+            slice_bounds=slice_bounds,
+            return_original_shape=False,
+            mask_value=9999.,
+            )
+    if debug:
+        print(f"{perf_counter():.3f} Loaded {hist.shape[0]} hist gribs ")
     ## read all the percentile data into memory
-    pct = []
-    for p in pct_paths:
-        with pygrib.open(p) as pgf:
-            tmp_feats = []
-            for rix in pct_rixs:
-                #pgf.seek(0)
-                #print(next(pgf).latlons())
-                pgf.seek(rix)
-                ## nldas convention is to index latitude low to high
-                ## but i don't like that
-                x = pgf.readline().values.data[::-1][*slice_bounds]
-                tmp_feats.append(x[m_valid])
-            pct.append(np.stack(tmp_feats, axis=-1))
-    pct = np.stack(pct, axis=0)
+    pct,_ = load_sportlis_gribs(
+            grib_paths=pct_paths,
+            record_indices=pct_rixs,
+            slice_bounds=slice_bounds,
+            return_original_shape=False,
+            m_valid=m_valid,
+            )
+    if debug:
+        print(f"{perf_counter():.3f} Loaded {hist.shape[0]} percentile gribs ")
 
     ## progressively vertically integrate each layer if requested
     if integrate_layers:

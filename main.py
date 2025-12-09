@@ -10,7 +10,7 @@ from datetime import datetime
 from shapely.strtree import STRtree
 
 from plotting import plot_geo_scalar,plot_geo_ints
-from get_sportlis_smvi import SMVIConfig,get_sportlis_smvi
+from get_sportlis_smvi import SMVIConfig,get_sportlis_smvi,load_sportlis_gribs
 from get_poly_raster import get_poly_raster
 
 ## labels corresponding to each sportlis_HIST record (extracted with wgrib)
@@ -69,24 +69,28 @@ if __name__=="__main__":
     layer_depths = [.1, .3, .6, 1.]
 
     ## If True, re-calculates raster rather than using stored
-    new_poly_raster = False
+    new_poly_raster = True
     ## If True, re-calculates SMVI rather than using stored
-    new_smvi = False
+    new_smvi = True
 
     ## plotting options for smvi
     plot_fractional_smvi = False
-    plot_binary_smvi = True
-    plot_pixelwise_smvi = True
+    plot_binary_smvi = False
+    plot_pixelwise_smvi = False
+    plot_percentile_and_smvi = True
+
+    ## percentage threshold of SMVI positive pixels in a polygon in order for
+    ## that polygon to be considered "active" in binary plots
     smvi_thresh = .3
+    ## optionally provide a exclusive day of the week to plot for weekly
+    #plot_day_of_week = None
+    plot_day_of_week = 1 ## tuesdays
 
     ## number of concurrent workers and number of subsets (groups) to split the
     ## time series into. More groups need more memory, but fewer disc reads.
     nworkers = 2
     ngroups = 6
-
-    ## optionally provide a exclusive day of the week to plot for weekly
-    #plot_day_of_week = None
-    plot_day_of_week = 1 ## tuesdays
+    debug = True
 
     """   -----( end of normal configuration )-----   """
 
@@ -116,21 +120,23 @@ if __name__=="__main__":
                     "STATE","CWA","COUNTYNAME","FIPS","TIME_ZONE",
                     "FE_AREA","LON","LAT","Shape_Area"],
                 return_subgrid_slices=True,
+                debug=debug,
                 )
         latlon = (lat[*sub_slice],lon[*sub_slice])
         pkl.dump((pir,metadata,sub_slice,latlon), poly_raster_path.open("wb"))
     ## test plot for polygon index raster
     #plot_geo_ints(int_data=pir, lat=lat, lon=lon, int_labels=None, show=True)
 
+    ## indices of soil layers wrt the LIS_HIST
+    hist_soilm_record_idxs = [rlabels_hist.index(l) for l in soilm_labels]
+    ## labels of corresponding soil layers in the percentile file
+    pct_soilm_record_idxs = list(range(4))
+
+    plotted_files = {}
     ## calculate SMVI over the specified date range, using the same bounds as
     ## the county polygon raster
     if new_smvi:
-        ## indices of soil layers wrt the LIS_HIST
-        hist_soilm_record_idxs = [rlabels_hist.index(l) for l in soilm_labels]
-        ## labels of corresponding soil layers in the percentile file
-        pct_soilm_record_idxs = list(range(4))
-
-        smvi,dates = get_sportlis_smvi(
+        smvi,dates,(hist_files,pct_files) = get_sportlis_smvi(
             hist_file_dir=sportlis_dir,
             percentile_file_dir=sportlis_dir,
             hist_record_indices=hist_soilm_record_idxs,
@@ -147,21 +153,97 @@ if __name__=="__main__":
             longitudes=lon,
             percentile_file_pattern=percentile_file_pattern,
             hist_file_pattern=hist_file_pattern,
+            return_source_files=True,
+            debug=debug,
             )
-        pkl.dump((smvi,dates,soilm_labels), smvi_path.open("wb"))
+        pkl.dump(
+            (smvi,dates,(hist_files,pct_files),soilm_labels),
+             smvi_path.open("wb"))
 
     ## load the stored pkl files and plot
     pir,metadata,sub_slice,(lat,lon) = pkl.load(poly_raster_path.open("rb"))
-    smvi,dates,soilm_labels = pkl.load(smvi_path.open("rb"))
+    smvi,dates,(hist_files,pct_files),soilm_labels = \
+            pkl.load(smvi_path.open("rb"))
 
     ## get the relevant counties from the indeces in the metadata
     gdf = gpd.read_file(shapefile)
     polys = [gdf["geometry"][md["poly_idx"]] for md in metadata]
 
-    if plot_pixelwise_smvi:
-        plotted_files = {}
+    if plot_percentile_and_smvi:
+        if debug:
+            print(f"loading {len(pct_files)} percentile gribs")
+        pct_data,_ = load_sportlis_gribs(
+                grib_paths=pct_files,
+                record_indices=pct_soilm_record_idxs,
+                slice_bounds=sub_slice,
+                return_original_shape=True,
+                mask_value=9999.,
+                debug=debug,
+                )
         for fix,fstr in enumerate(soilm_labels):
-            plotted_files[fstr] = []
+            pkey = f"percentile-and-smvi {fstr}"
+            plotted_files[pkey] = []
+            for tix,dt in enumerate(dates):
+                if plot_day_of_week and not dt.weekday()==plot_day_of_week:
+                    continue
+                tstr = dt.strftime("%Y%m%d")
+                tstr2 = dt.strftime("%Y-%m-%d")
+                fig_path = fig_dir.joinpath(
+                    f"smvi_pixelwise-percentile_{bbox_name}_{tstr}_{fstr}.png")
+                plot_geo_scalar(
+                    data=pct_data[tix,:,:,fix],
+                    latitude=lat,
+                    longitude=lon,
+                    hatch_data=(smvi[tix,:,:,fix]==1),
+                    shapes=polys,
+                    latlon_ticks=False,
+                    show=False,
+                    fig_path=fig_path,
+                    plot_spec={
+                        "title":f"{fstr} percentile, hatched SMVI ({tstr2})",
+                        "cbar_shrink":.9,
+                        "cbar_spacing":"proportional",
+                        "cbar_extend":"both",
+                        "cbar_orient":"horizontal",
+                        "cbar_pad":.05,
+                        "hatch_shading":"auto",
+                        "hatch_edgecolor":"none",
+                        "hatch_style":["xxx"],
+                        "hatch_facecolor":"none",
+                        "border_linewidth":1.2,
+                        "fontsize_labels":8,
+                        "custom_cmap_params":{
+                            "colors":[
+                                "#C52104", ## 2-5
+                                "#FA5B0F", ## 5-10
+                                "#F28705", ## 10-20
+                                "#F2B807", ## 20-30
+                                #"#FEF7CC", ## 30-50
+                                #"#CCD3FE", ## 50-70
+                                "#E3E1E1", ## 30-70
+                                "#2998FF", ## 70-80
+                                "#0068C4", ## 80-90
+                                "#004B8D", ## 90-95
+                                "#00294D", ## 95-98
+                                ],
+                            "bounds":[2,5,10,20,30,70,80,90,95,98],
+                            "extremes":("#710301", "#082136"),
+                            },
+                        "shape_params":{
+                            "edgecolor":"black",
+                            "linewidth":.5,
+                            "facecolor":"none",
+                            "alpha":.8,
+                            },
+                        },
+                    )
+                plotted_files[pkey].append(fig_path)
+                print(f"Generated {fig_path.as_posix()}")
+
+    if plot_pixelwise_smvi:
+        for fix,fstr in enumerate(soilm_labels):
+            pkey = f"pixelwise-smvi {fstr}"
+            plotted_files[pkey] = []
             for tix,dt in enumerate(dates):
                 if plot_day_of_week and not dt.weekday()==plot_day_of_week:
                     continue
@@ -200,7 +282,7 @@ if __name__=="__main__":
                         },
                     colors=["#3D74B6", "#FBF5DE", "#DC3C22"],
                     )
-                plotted_files[fstr].append(fig_path)
+                plotted_files[pkey].append(fig_path)
                 print(f"Generated {fig_path.as_posix()}")
 
     fsmvi = None
@@ -215,9 +297,9 @@ if __name__=="__main__":
             fsmvi = np.count_nonzero(smvi[:,m_pix,:]==1, axis=1) / npx
             smvi_frac[:,m_pix,:] = fsmvi[:,np.newaxis]
 
-        plotted_files = {}
         for fix,fstr in enumerate(soilm_labels):
-            plotted_files[fstr] = []
+            pkey = f"smvi-fraction {fstr}"
+            plotted_files[pkey] = []
             for tix,dt in enumerate(dates):
                 tstr = dt.strftime("%Y%m%d")
                 tstr2 = dt.strftime("%Y-%m-%d")
@@ -241,7 +323,7 @@ if __name__=="__main__":
                     show=False,
                     fig_path=fig_path,
                     )
-                plotted_files[fstr].append(fig_path)
+                plotted_files[pkey].append(fig_path)
                 print(f"Generated {fig_path.as_posix()}")
 
     if plot_binary_smvi:
@@ -256,9 +338,9 @@ if __name__=="__main__":
             smvi_bin[:,m_pix,:] = \
                     (fsmvi[:,np.newaxis]>smvi_thresh).astype(int) + 1
 
-        plotted_files = {}
         for fix,fstr in enumerate(soilm_labels):
-            plotted_files[fstr] = []
+            pkey = f"poly-smvi {fstr}"
+            plotted_files[pkey] = []
             for tix,dt in enumerate(dates):
                 if plot_day_of_week and not dt.weekday()==plot_day_of_week:
                     continue
@@ -298,5 +380,5 @@ if __name__=="__main__":
                         },
                     colors=["#3D74B6", "#FBF5DE", "#DC3C22"],
                     )
-                plotted_files[fstr].append(fig_path)
+                plotted_files[pkey].append(fig_path)
                 print(f"Generated {fig_path.as_posix()}")

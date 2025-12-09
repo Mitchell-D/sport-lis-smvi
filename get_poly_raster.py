@@ -3,12 +3,33 @@ import geopandas as gpd
 from pathlib import Path
 from shapely.geometry import Point,Polygon
 from shapely.strtree import STRtree
+from time import perf_counter
 
 from helpers import get_bounding_latlon_slice
 
+def apply_by_polygon(dataset, poly_int_raster, agg_func,
+        dtype=np.float32, poly_oob_value=-1, output_oob_value=np.nan):
+    """
+    Given a (N,Y,X,F) dataset and a (Y,X) polygon integer raster array
+    (returned by get_poly_raster), apply a function mapping all pixels within
+    that polygon to a single value, and return an array with the same shape as
+    the input dataset, but with every pixel within each polygon having the
+    value returned by the function.
+    """
+    out = np.full(dataset.shape, output_oob_value, dtype=dtype)
+    for pix in np.unique(poly_int_raster):
+        if pix==poly_oob_value:
+            continue
+        m_pix = poly_int_raster==pix
+        tmp = np.apply_along_axis(
+                func1d=agg_func, axis=1, arr=dataset[:,m_pix]
+                )[:,np.newaxis]
+        out[:,m_pix,:] = tmp
+    return out
+
 def get_poly_raster(latitudes, longitudes, shapefile:Path,
     lat_bounds=None, lon_bounds=None, shapefile_columns:list=None,
-    return_subgrid_slices=False):
+    return_subgrid_slices=False, debug=False):
     """
     Given latitude and longitude coordinate arrays and a shapefile, return
     an integer array assigning each pixel to the polygon that contains it,
@@ -39,6 +60,8 @@ def get_poly_raster(latitudes, longitudes, shapefile:Path,
         True, returns 3-tuple like:
         (poly_ints:np.array, metadata:list, (yslice:slice, xslice:slice))
     """
+    if debug:
+        print(f"{perf_counter():.3f} Reading shapefile ")
     lat,lon = latitudes,longitudes
     ## extract the polygons from the shapefile
     gdf = gpd.read_file(shapefile)
@@ -81,12 +104,16 @@ def get_poly_raster(latitudes, longitudes, shapefile:Path,
         (i,p) for i,p in enumerate(gdf.geometry.values) if p.intersects(bbox)
         ])
 
+    if debug:
+        print(f"{perf_counter():.3f} Initializing STR Tree ")
     ## make an STR tree of the polygons so that it's efficient to rule out
     ## inclusion of pixels that are strictly outside the minimum bounding
     ## rectangle. See linked document:
     ## https://ia600709.us.archive.org/13/items/nasa_techdoc_19970016975/19970016975.pdf
     tree = STRtree(polygons)
 
+    if debug:
+        print(f"{perf_counter():.3f} Grouping by polygons ")
     ## For each of the points, see if it is in any of the polygon's MBR
     ## by querying the STR tree. Then do a refined check to see which of the
     ## polygons actually contain it.

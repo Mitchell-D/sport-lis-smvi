@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -124,16 +125,22 @@ def plot_geo_ints(int_data, lat, lon, shapes=None,
     plt.close()
     return
 
-def plot_geo_scalar(data, latitude, longitude, bounds=None, plot_spec={},
-             latlon_ticks=False, show=False, fig_path=None,
-             use_contours=False):
+def plot_geo_scalar(data, latitude, longitude, hatch_data=None, shapes=None,
+        bounds=None, plot_spec={}, latlon_ticks=False, show=False,
+        fig_path=None, use_contours=False):
     """
     Plot a gridded scalar value on a geodetic domain, using cartopy for borders
     """
-    ps = {"xlabel":"", "ylabel":"", "marker_size":4,
-          "cmap":"jet_r", "text_size":12, "title":"",
-          "norm":"linear","figsize":(12,12), "marker":"o", "cbar_shrink":1.,
-          "map_linewidth":2}
+    ps = {
+        "xlabel":"", "ylabel":"", "marker_size":4, "cmap":"jet_r", "dpi":200,
+        "text_size":12, "title":"", "norm":"linear","figsize":None,
+        "marker":"o", "cbar_shrink":1., "map_linewidth":2,
+        "hatch_shading":"auto", "hatch_edgecolor":"black", "hatch_style":"xxx",
+        "hatch_linewidth":1, "hatch_facecolor":"none", "hatch_edgewidth":1,
+        "shape_params":{"edgecolor":"black"},
+        "cartopy_feats":["land", "borders", "states"],
+        "cbar_extendfrac":0.05, "custom_cmap_params":None,
+        }
     plt.clf()
     ps.update(plot_spec)
     plt.rcParams.update({"font.size":ps["text_size"]})
@@ -149,30 +156,32 @@ def plot_geo_scalar(data, latitude, longitude, bounds=None, plot_spec={},
     #ax.add_feature(cfeature.LAKES, linewidth=ps.get("map_linewidth"))
     #ax.add_feature(cfeature.RIVERS, linewidth=ps.get("map_linewidth"))
 
-    ax.set_title(ps.get("title"), fontsize=ps.get("fontsize_title", 18))
-    ax.set_xlabel(ps.get("xlabel"), fontsize=ps.get("fontsize_labels", 14))
-    ax.set_ylabel(ps.get("ylabel"), fontsize=ps.get("fontsize_labels", 14))
+    ax.set_title(ps.get("title"), fontsize=ps.get("fontsize_title", 12))
+    ax.set_xlabel(ps.get("xlabel"), fontsize=ps.get("fontsize_labels", 10))
+    ax.set_ylabel(ps.get("ylabel"), fontsize=ps.get("fontsize_labels", 10))
+
+    cmap_params = {}
+    if not ps.get("custom_cmap_params") is None:
+        ccp = ps["custom_cmap_params"]
+        cmap = matplotlib.colors.ListedColormap(ccp["colors"])
+        if "extremes" in ccp.keys():
+            assert isinstance(ccp["extremes"], (list,tuple))
+            exlow,exhigh = ccp["extremes"]
+            cmap = cmap.with_extremes(under=exlow, over=exhigh)
+        norm = matplotlib.colors.BoundaryNorm(ccp["bounds"], cmap.N)
+        cmap_params = {"cmap":cmap, "norm":norm}
+    else:
+        cmap_parms = {
+            "cmap":ps.get("cmap"),
+            "norm":ps.get("norm"),
+            "vmin":ps.get("vmin"),
+            "norm":ps.get("vmax"),
+            }
 
     if use_contours:
-        scat = ax.contourf(
-                longitude,
-                latitude,
-                data,
-                cmap=ps.get("cmap"),
-                norm=ps.get("norm"),
-                vmin=ps.get("vmin"),
-                vmax=ps.get("vmax"),
-                )
+        scat = ax.contourf(longitude, latitude, data, **cmap_params)
     else:
-        scat = ax.pcolormesh(
-                longitude,
-                latitude,
-                data,
-                cmap=ps.get("cmap"),
-                norm=ps.get("norm"),
-                vmin=ps.get("vmin"),
-                vmax=ps.get("vmax"),
-                )
+        scat = ax.pcolormesh(longitude, latitude, data, **cmap_params)
 
     if latlon_ticks:
         lonmin,lonmax,latmin,latmax = bounds
@@ -187,12 +196,57 @@ def plot_geo_scalar(data, latitude, longitude, bounds=None, plot_spec={},
         ax.yaxis.set_major_formatter(lat_formatter)
         ax.tick_params(rotation=ps.get("tick_rotation", 0))
 
-    ax.add_feature(cfeature.BORDERS, linewidth=ps.get("map_linewidth"),
-                   zorder=120)
-    ax.add_feature(cfeature.STATES, linewidth=ps.get("map_linewidth"),
-                   zorder=120)
-    ax.coastlines()
-    fig.colorbar(
+    if not hatch_data is None:
+        hatch_plot = ax.contourf(
+            longitude,
+            latitude,
+            hatch_data.astype(int),
+            levels=[0.5,1.5],
+            hatches=ps.get("hatch_style"),
+            #linewidth=ps.get("hatch_linewidth"),
+            colors="none",
+            #edgecolor=ps.get("hatch_edgecolor"),
+            )
+
+        '''
+        ax.pcolormesh(
+            longitude,
+            latitude,
+            hatch_data,
+            shading=ps.get("shading", "auto"),
+            facecolor=ps.get("hatch_facecolor"),
+            edgecolor=ps.get("hatch_edgecolor"),
+            hatch=ps.get("hatch_style"),
+            linewidth=ps.get("hatch_linewidth"),
+            )
+        '''
+
+    if not shapes is None:
+        ax.add_geometries(shapes, ccrs.PlateCarree(), **ps.get("shape_params"))
+
+    if "land" in ps.get("cartopy_feats"):
+        ax.add_feature(
+                cfeature.LAND,
+                #linestyle=ps.get("border_style", "-"),
+                #linewidth=ps.get("border_linewidth", 2),
+                #edgecolor=ps.get("border_color", "black"),
+                )
+    if "borders" in ps.get("cartopy_feats"):
+        ax.add_feature(
+                cfeature.BORDERS,
+                linestyle=ps.get("border_style", "-"),
+                linewidth=ps.get("border_linewidth", 2),
+                edgecolor=ps.get("border_color", "black"),
+                )
+    if "states" in ps.get("cartopy_feats"):
+        ax.add_feature(
+                cfeature.STATES,
+                linestyle=ps.get("border_style", "-"),
+                linewidth=ps.get("border_linewidth", 2),
+                edgecolor=ps.get("border_color", "black"),
+                )
+
+    cbar = fig.colorbar(
             scat,
             ax=ax,
             shrink=ps.get("cbar_shrink"),
@@ -200,13 +254,18 @@ def plot_geo_scalar(data, latitude, longitude, bounds=None, plot_spec={},
             orientation=ps.get("cbar_orient", "vertical"),
             pad=ps.get("cbar_pad", 0.0),
             norm=ps.get("norm"),
+            extendfrac=ps.get("cbar_extendfrac"),
+            spacing=ps.get("cbar_spacing", "uniform"),
+            extend=ps.get("cbar_extend", "both"),
             )
+    cbar.ax.tick_params(labelsize=ps.get("fontsize_labels", 10))
     scat.figure.axes[0].tick_params(
-            axis="both", labelsize=ps.get("fontsize_labels",14))
+            axis="both", labelsize=ps.get("fontsize_labels",10))
 
     if not fig_path is None:
-        fig.set_size_inches(*ps.get("figsize"))
-        fig.savefig(fig_path.as_posix(), bbox_inches="tight",dpi=80)
+        if not ps.get("figsize") is None:
+            fig.set_size_inches(*ps.get("figsize"))
+        fig.savefig(fig_path.as_posix(), bbox_inches="tight",dpi=ps.get("dpi"))
     if show:
         plt.show()
     plt.close()
