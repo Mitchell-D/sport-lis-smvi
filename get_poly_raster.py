@@ -1,6 +1,7 @@
 import numpy as np
 import geopandas as gpd
 from pathlib import Path
+import shapely
 from shapely.geometry import Point,Polygon
 from shapely.strtree import STRtree
 from time import perf_counter
@@ -121,15 +122,16 @@ def get_poly_raster(latitudes, longitudes, shapefile:Path,
     ## polygons actually contain it.
     poly_raster = np.full(len(points), -1, dtype=int)
     for rix,pt in enumerate(points):
-        ## tree only contains polygons from subset so must convert to the
-        ## polygon indeces wrt the shapefile ordering
-        '''
-        cand_poly_subset_ixs = tree.query(pt)
-        cand_polys = [polygons[ix] for ix in cand_poly_subset_ixs]
-        cand_pixs = [poly_ixs[ix] for ix in cand_poly_subset_ixs]
-        '''
-        cand_polys = tree.query(pt)
-        cand_pixs = [id_to_ix[id(p)] for p in cand_polys]
+        if int(shapely.__version__[0])==1:
+            ## tree only contains polygons from subset so must convert to the
+            ## polygon indeces wrt the shapefile ordering if version 1
+            cand_polys = tree.query(pt)
+            cand_pixs = [id_to_ix[id(p)] for p in cand_polys]
+        else:
+            ## otherwise query returns the indeces wrt the input polys
+            cand_poly_subset_ixs = tree.query(pt)
+            cand_polys = [polygons[ix] for ix in cand_poly_subset_ixs]
+            cand_pixs = [poly_ixs[ix] for ix in cand_poly_subset_ixs]
         ## use the new polygon indeces, not the ones from the shapefile.
         ## the original shapefile indeces will be returned in the metadata
         #for pix,poly in enumerate(cand_polys):
@@ -141,7 +143,9 @@ def get_poly_raster(latitudes, longitudes, shapefile:Path,
     ## extract the requested auxiliary column data from the polygons, and
     ## convert the int values from the original polygon indeces to contiguous
     ## values starting at 0, with -1 still representing masked values
-    unq_pixs = np.delete(np.unique(poly_raster), 0) ## remove -1
+    unq_pixs = np.unique(poly_raster)
+    if -1 in unq_pixs:
+        unq_pixs = np.delete(unq_pixs, 0) ## -1 should always be 0 index
     metadata = [{"poly_idx":pix, **{k:gdf[k][pix] for k in colkeys}}
         for i,pix in enumerate(unq_pixs)]
     val_to_ix = {v:ix for ix,v in enumerate(unq_pixs)}

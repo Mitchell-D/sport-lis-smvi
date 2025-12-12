@@ -103,7 +103,7 @@ if __name__=="__main__":
     poly_name = "counties"
 
     ## directory where pkls containing poly raster domains are stored
-    poly_raster_dir = Path("data/poly")
+    poly_raster_dir = Path("data/poly2")
     new_poly_raster = False ## if True, always re-generates poly rasters
 
     ## verify that required files/directories exist
@@ -124,12 +124,12 @@ if __name__=="__main__":
 
     ## plotting options for smvi
     plot_binary_smvi = True
-    plot_percentile_and_smvi = False
+    plot_percentile_and_smvi = True
 
     ## number of concurrent workers and number of subsets (groups) to split the
     ## time series into. More groups need more memory, but fewer disc reads.
-    nworkers = 12
-    ngroups = 12
+    nworkers = 16
+    ngroups = 16
     debug = True
 
     """   -----( end of normal configuration )-----   """
@@ -185,7 +185,8 @@ if __name__=="__main__":
         pkl.dump((pir,metadata,sub_slice,latlon), poly_raster_path.open("wb"))
     else:
         assert poly_raster_path.exists(),poly_raster_path
-        pir,metadata,sub_slice,(lat,lon) = pkl.load(
+        ## don't load the subset latlon;, let get_sportlis_smvi get the bounds
+        pir,metadata,sub_slice,_ = pkl.load(
                 poly_raster_path.open("rb"))
 
     ## indices of soil layers wrt the LIS_HIST file records
@@ -202,6 +203,7 @@ if __name__=="__main__":
         hist_record_indices=hist_soilm_record_idxs,
         percentile_record_indices=pct_soilm_record_idxs,
         layer_depths=layer_depths,
+        integrate_layers=True,
         start_time=start_time,
         end_time=end_time,
         lat_bounds=lat_bounds,
@@ -236,8 +238,8 @@ if __name__=="__main__":
         args = [{
             "percentile_data":pct_data[tix,:,:,fix],
             "smvi_data":(smvi[tix,:,:,fix]==1),
-            "lat":lat,
-            "lon":lon,
+            "lat":lat[sub_slice[0], sub_slice[1]],
+            "lon":lon[sub_slice[0], sub_slice[1]],
             "fstr":fstr,
             "fig_path":fig_dir.joinpath(
                 f"smvi_pixelwise-percentile_{bbox_name}_" + \
@@ -250,9 +252,6 @@ if __name__=="__main__":
             for fix,fstr in enumerate(soilm_labels)
             if plot_day_of_week is None or dt.weekday()==plot_day_of_week
             ]
-        print([dt.weekday() for dt in dates])
-        print(f"plot_day_of_week={plot_day_of_week}")
-        print(len(args))
         with Pool(nworkers) as pool:
             for p in pool.imap_unordered(mp_plot_percentile_and_smvi, args):
                 print(f"Generated {p.as_posix()}")
@@ -272,8 +271,8 @@ if __name__=="__main__":
 
         args = [{
             "int_data":poly_smvi[tix,:,:,fix],
-            "lat":lat,
-            "lon":lon,
+            "lat":lat[sub_slice[0], sub_slice[1]],
+            "lon":lon[sub_slice[0], sub_slice[1]],
             "fstr":fstr,
             "fig_path":fig_dir.joinpath(
                 f"smvi_binary_{bbox_name}_{poly_name}_" + \

@@ -109,7 +109,7 @@ def get_sportlis_smvi(
         sfmt = {"yyyymmdd":tstr,"yyyymm":tstr[:6],"yyyy":tstr[:4]}
         hist_dates.append(sfmt)
         if t >= start_time:
-            hist_dates.append(sfmt)
+            pct_dates.append(sfmt)
             pct_datetimes.append(t)
         t += timedelta(days=1)
 
@@ -137,6 +137,11 @@ def get_sportlis_smvi(
     ## get the bounding box of the subgrid desired for analysis
     slice_bounds = get_bounding_latlon_slice(lat, lon, lat_bounds, lon_bounds)
 
+    if len(pct_dates) < ngroups:
+        ngroups = len(pct_dates)
+    if nworkers > ngroups:
+        nworkers = ngroups
+
     ## break up the time series into groups
     wkr_steps = len(pct_dates) // ngroups
     res_steps = len(pct_dates) % ngroups
@@ -157,7 +162,7 @@ def get_sportlis_smvi(
         "pct_thresh":smvi_config.last_day_percentile_cutoff,
         "debug":debug,
         } for i in range(ngroups)]
-    print(args)
+    pprint(args)
     if debug:
         print(f"{perf_counter():.3f} Initializing SMVI workers ")
     smvi = []
