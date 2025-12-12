@@ -167,7 +167,9 @@ def plot_geo_scalar(data, latitude, longitude, hatch_data=None, shapes=None,
         if "extremes" in ccp.keys():
             assert isinstance(ccp["extremes"], (list,tuple))
             exlow,exhigh = ccp["extremes"]
-            cmap = cmap.with_extremes(under=exlow, over=exhigh)
+            #cmap = cmap.with_extremes(under=exlow, over=exhigh)
+            cmap.set_over(exhigh)
+            cmap.set_under(exlow)
         norm = matplotlib.colors.BoundaryNorm(ccp["bounds"], cmap.N)
         cmap_params = {"cmap":cmap, "norm":norm}
     else:
@@ -269,3 +271,104 @@ def plot_geo_scalar(data, latitude, longitude, hatch_data=None, shapes=None,
     if show:
         plt.show()
     plt.close()
+
+def mp_plot_binary_smvi(args):
+    return plot_binary_smvi(**args)
+def plot_binary_smvi(
+        int_data, lat, lon, fstr, fig_path, polys, date, smvi_thresh):
+    """
+    """
+    tstr = date.strftime("%Y%m%d")
+    tstr2 = date.strftime("%Y-%m-%d")
+    plot_geo_ints(
+        int_data=int_data,
+        lat=lat,
+        lon=lon,
+        int_labels=[
+            "Out of Domain",
+            f"SMVI Fraction <= {smvi_thresh}",
+            f"SMVI Fraction > {smvi_thresh}",
+            ],
+        fig_path=fig_path,
+        latlon_ticks=False,
+        shapes=polys,
+        cbar_ticks=True,
+        plot_spec={
+            "cbar_pad":0.02,
+            "cbar_orient":"horizontal",
+            "cbar_shrink":.8,
+            "cbar_fontsize":14,
+            "tick_frequency":12,
+            "tick_rotation":45,
+            "title":f"Counties with >{smvi_thresh*100}% SMVI" + \
+                    f" {fstr} ({tstr2})",
+            "tile_fontsize":18,
+            "interpolation":"none",
+            "shape_params":{
+                "edgecolor":"silver",
+                "facecolor":"none",
+                "alpha":.85,
+                },
+            },
+        colors=["#3D74B6", "#FBF5DE", "#DC3C22"],
+        )
+    return fig_path
+
+def mp_plot_percentile_and_smvi(args):
+    return plot_percentile_and_smvi(**args)
+def plot_percentile_and_smvi(
+        percentile_data, smvi_data, lat, lon, fstr, fig_path, polys, date,
+        smvi_thresh):
+    """
+    """
+    tstr = date.strftime("%Y%m%d")
+    tstr2 = date.strftime("%Y-%m-%d")
+    plot_geo_scalar(
+        data=percentile_data,
+        latitude=lat,
+        longitude=lon,
+        hatch_data=smvi_data,
+        shapes=polys,
+        latlon_ticks=False,
+        show=False,
+        fig_path=fig_path,
+        plot_spec={
+            "title":f"{fstr} percentile, hatched " + \
+                    f"SMVI>{smvi_thresh*100}% ({tstr2})",
+            "cbar_shrink":.9,
+            "cbar_spacing":"proportional",
+            "cbar_extend":"both",
+            "cbar_orient":"horizontal",
+            "cbar_pad":.05,
+            "hatch_shading":"auto",
+            "hatch_edgecolor":"none",
+            "hatch_style":["xxx"],
+            "hatch_facecolor":"none",
+            "border_linewidth":1.2,
+            "fontsize_labels":8,
+            "custom_cmap_params":{
+                "colors":[
+                    "#C52104", ## 2-5
+                    "#FA5B0F", ## 5-10
+                    "#F28705", ## 10-20
+                    "#F2B807", ## 20-30
+                    #"#FEF7CC", ## 30-50
+                    #"#CCD3FE", ## 50-70
+                    "#E3E1E1", ## 30-70
+                    "#2998FF", ## 70-80
+                    "#0068C4", ## 80-90
+                    "#004B8D", ## 90-95
+                    "#00294D", ## 95-98
+                    ],
+                "bounds":[2,5,10,20,30,70,80,90,95,98],
+                "extremes":("#710301", "#082136"),
+                },
+            "shape_params":{
+                "edgecolor":"black",
+                "linewidth":.5,
+                "facecolor":"none",
+                "alpha":.8,
+                },
+            },
+        )
+    return fig_path

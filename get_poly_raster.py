@@ -97,12 +97,14 @@ def get_poly_raster(latitudes, longitudes, shapefile:Path,
     ## make a shapely point for each coordinate combination
     flat_lat = lat.ravel()
     flat_lon = lon.ravel()
-    points = np.array([Point(x, y) for x, y in zip(flat_lon, flat_lat)])
+    points = [Point(x, y) for x, y in zip(flat_lon, flat_lat)]
 
     ## Subset the polygons to only those which intersecet the bounding box
-    poly_ixs,polygons = zip(*[
-        (i,p) for i,p in enumerate(gdf.geometry.values) if p.intersects(bbox)
+    poly_ixs,poly_ids,polygons = zip(*[
+        (i,id(p),p)
+        for i,p in enumerate(gdf.geometry.values) if p.intersects(bbox)
         ])
+    id_to_ix = dict(zip(poly_ids,poly_ixs))
 
     if debug:
         print(f"{perf_counter():.3f} Initializing STR Tree ")
@@ -121,9 +123,13 @@ def get_poly_raster(latitudes, longitudes, shapefile:Path,
     for rix,pt in enumerate(points):
         ## tree only contains polygons from subset so must convert to the
         ## polygon indeces wrt the shapefile ordering
+        '''
         cand_poly_subset_ixs = tree.query(pt)
         cand_polys = [polygons[ix] for ix in cand_poly_subset_ixs]
         cand_pixs = [poly_ixs[ix] for ix in cand_poly_subset_ixs]
+        '''
+        cand_polys = tree.query(pt)
+        cand_pixs = [id_to_ix[id(p)] for p in cand_polys]
         ## use the new polygon indeces, not the ones from the shapefile.
         ## the original shapefile indeces will be returned in the metadata
         #for pix,poly in enumerate(cand_polys):
