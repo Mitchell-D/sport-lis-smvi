@@ -9,6 +9,7 @@ import cartopy.crs as ccrs
 import lis_utils as utils
 #from helpers import get_bounding_latlon_slice
 
+use_jon_method = False
 plotfd = False
 plotraster = True
 dogrid = True
@@ -53,6 +54,7 @@ if __name__ == '__main__':
     vdate = dt.datetime(int(eyyyy), int(emo), int(edd)).strftime('%d %b %Y')
     sdate = (dt.datetime(int(eyyyy), int(emo), int(edd))
              - timedelta(days=40)).strftime('%Y%m%d')
+    ## ndays should always be 40 since 40 days explicitly encoded above
     ndays = utils.get_ndays(sdate, edate)
     print(f'sdate {sdate} edate {edate} vdate {vdate} ndays {ndays}')
     #sys.exit()
@@ -171,9 +173,16 @@ if __name__ == '__main__':
 #        print(f' [time to convert to numpy arrays: {tstop:0.1f} sec]')
 
         # Compute running means
+        ## only runs once w/ ( nn = ntimes-1 = soil_grid['time'].value.max() )
+        ## based on hard-coded value above, nn always equals 40
         for nn in range(ntimes-1, ntimes):
+            ## each vsm array shaped (T,Y,X) = (41, 929, 1929)
+            print("NN:",nn)
             fd11, fd12, fd13, fd14 = \
-                utils.get_fd_array(vsm11, vsm12, vsm13, vsm14, nlats, nlons, nn)
+                utils.get_fd_array(vsm11, vsm12, vsm13, vsm14, nlats, nlons, nn,
+                        jon_method=use_jon_method)
+        print(fd11.shape, fd12.shape, fd13.shape, fd14.shape)
+        exit(0)
 
         # Check that percentiles fell below 20. If so, set flash_drought arrays
         # to 2.0 to signify flash drought criteria fully met.

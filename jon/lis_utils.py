@@ -246,7 +246,7 @@ def make_fd_plots(lon, lat, var, fd, geo, title, png, zoom):
 #    print(f'  --Lapsed time (plot close): {ctime:0.2f} sec')
 
 
-def get_fd_array(v11, v12, v13, v14, nlat, nlon, nt):
+def get_fd_array(v11, v12, v13, v14, nlat, nlon, nt, jon_method=True):
     # NOTE: v11, v12, v13, and v14 should be xr DataArrays.
     counts1 = np.zeros((nlat, nlon), dtype=np.int32)
     counts2 = np.zeros((nlat, nlon), dtype=np.int32)
@@ -279,29 +279,52 @@ def get_fd_array(v11, v12, v13, v14, nlat, nlon, nt):
     ctime = time.time() - start
     print(f' [time to convert to numpy arrays: {ctime:0.1f} sec]')
 
-    day_thresh = 20
-    for nn in range(nt - day_thresh, nt):
-        print(f'  -Evaluating 5/20 day running means at time t={nn}.')
-        # Rolling 5-day mean: index nn-window (numpy method)
-        v11_05d_avg = v11_05d[nn - 5]
-        v12_05d_avg = v12_05d[nn - 5]
-        v13_05d_avg = v13_05d[nn - 5]
-        v14_05d_avg = v14_05d[nn - 5]
-        # Rolling 20-day mean
-        v11_20d_avg = v11_20d[nn - 20]
-        v12_20d_avg = v12_20d[nn - 20]
-        v13_20d_avg = v13_20d[nn - 20]
-        v14_20d_avg = v14_20d[nn - 20]
-        counts1 += (v11_05d_avg < v11_20d_avg).astype(np.int32)
-        counts2 += (v12_05d_avg < v12_20d_avg).astype(np.int32)
-        counts3 += (v13_05d_avg < v13_20d_avg).astype(np.int32)
-        counts4 += (v14_05d_avg < v14_20d_avg).astype(np.int32)
+    ## 5-day averages have 36 timesteps; 20-day has 21 timesteps
+    ## the final time step of both arrays refers to the respective windows'
+    ## averages up to and including the end day.
+    print(nt, combined_np.shape, v11_05d.shape, v11_20d.shape)
 
-    print(f'  -Finding points that meet flash drought criteria....')
-    fd1[counts1 > day_thresh - 1] = 1.0
-    fd2[counts2 > day_thresh - 1] = 1.0
-    fd3[counts3 > day_thresh - 1] = 1.0
-    fd4[counts4 > day_thresh - 1] = 1.0
+    day_thresh = 20
+    if jon_method:
+        ## iterate from 20 to 39, inclusively. This ignores the last day, which
+        ## may be unintended.
+        for nn in range(nt - day_thresh, nt):
+            print(f'  -Evaluating 5/20 day running means at time t={nn}.')
+            # Rolling 5-day mean: index nn-window (numpy method)
+            ## indexes 15-34 inclusive, which refer to 5-day moving averages
+            ## ending with days in the range [start - 20, start - 1]
+            v11_05d_avg = v11_05d[nn - 5]
+            v12_05d_avg = v12_05d[nn - 5]
+            v13_05d_avg = v13_05d[nn - 5]
+            v14_05d_avg = v14_05d[nn - 5]
+            # Rolling 20-day mean
+            ## indexes 0-19 inclusive, which refer to 20-day moving averages
+            ## ending with days in the range [start - 20, start - 1]
+            v11_20d_avg = v11_20d[nn - 20]
+            v12_20d_avg = v12_20d[nn - 20]
+            v13_20d_avg = v13_20d[nn - 20]
+            v14_20d_avg = v14_20d[nn - 20]
+            counts1 += (v11_05d_avg < v11_20d_avg).astype(np.int32)
+            counts2 += (v12_05d_avg < v12_20d_avg).astype(np.int32)
+            counts3 += (v13_05d_avg < v13_20d_avg).astype(np.int32)
+            counts4 += (v14_05d_avg < v14_20d_avg).astype(np.int32)
+
+        print(f'  -Finding points that meet flash drought criteria....')
+        fd1[counts1 > day_thresh - 1] = 1.0
+        fd2[counts2 > day_thresh - 1] = 1.0
+        fd3[counts3 > day_thresh - 1] = 1.0
+        fd4[counts4 > day_thresh - 1] = 1.0
+
+        ## showing that final timestep is ignored
+        slc = slice(-day_thresh-1, -1) ## [start - 20, start - 1]
+        fd1m = np.all(v11_05d[slc] < v11_20d[slc], axis=0)
+        assert np.all(np.isclose(fd1.astype(np.uint8), fd1m.astype(np.uint8)))
+    else:
+        slc = slice(-day_thresh, None) ## [start - 19, start]
+        fd1 = np.all(v11_05d[slc] < v11_20d[slc], axis=0)
+        fd2 = np.all(v11_05d[slc] < v11_20d[slc], axis=0)
+        fd3 = np.all(v11_05d[slc] < v11_20d[slc], axis=0)
+        fd4 = np.all(v11_05d[slc] < v11_20d[slc], axis=0)
 
     return fd1, fd2, fd3, fd4
 
