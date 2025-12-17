@@ -10,7 +10,7 @@ essentially the same plots. In both cases, start by ensuring you have
 a python environment that contains the dependencies listed in
 env.yml.
 
-** option 1 **
+### option 1
 
 1. Copy main\_smvi.py, get\_poly\_raster.py, get\_sportlis\_smvi.py,
    plotting.py, and helpers.py into the working directory.
@@ -39,7 +39,7 @@ env.yml.
 7. Read the CLI options with `main\_smvi.py -h`, then use the CLI to
    calculate SMVI and generate figures.
 
-** option 2 **
+### option 2
 
 1. From the jon directory of the repo, copy lis\_utils.py and
    sportlis\_smvi.py into your working directory.
