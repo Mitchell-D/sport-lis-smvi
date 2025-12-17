@@ -32,7 +32,7 @@ county_shp = f'/raid2/sport/people/casejl/DATA/SHAPEFILES/c_15au13.shp'
 counties = shpreader.Reader(county_shp)
 #counties = gpd.read_file(county_shp)
 
-POLY_RASTER_DIR = "/usr/people/mdodson/sport-lis-smvi/data/poly"
+POLY_RASTER_DIR = "/usr/people/mdodson/sport-lis-smvi/data/poly-jon"
 
 map_proj = ccrs.PlateCarree()
 data_trans = ccrs.PlateCarree()
@@ -321,10 +321,10 @@ def get_fd_array(v11, v12, v13, v14, nlat, nlon, nt, jon_method=True):
         assert np.all(np.isclose(fd1.astype(np.uint8), fd1m.astype(np.uint8)))
     else:
         slc = slice(-day_thresh, None) ## [start - 19, start]
-        fd1 = np.all(v11_05d[slc] < v11_20d[slc], axis=0)
-        fd2 = np.all(v11_05d[slc] < v11_20d[slc], axis=0)
-        fd3 = np.all(v11_05d[slc] < v11_20d[slc], axis=0)
-        fd4 = np.all(v11_05d[slc] < v11_20d[slc], axis=0)
+        fd1 = np.all(v11_05d[slc] < v11_20d[slc], axis=0).astype(float)
+        fd2 = np.all(v12_05d[slc] < v12_20d[slc], axis=0).astype(float)
+        fd3 = np.all(v13_05d[slc] < v13_20d[slc], axis=0).astype(float)
+        fd4 = np.all(v14_05d[slc] < v14_20d[slc], axis=0).astype(float)
 
     return fd1, fd2, fd3, fd4
 
@@ -712,6 +712,13 @@ def make_countyfd_plots(lons,lats,fd11,geo,title1,fname1,region,smvi_thresh):
     fd11 = fd11[::-1]
     lat2d = np.stack([lats for i in range(lons.shape[0])],axis=1)[::-1]
     lon2d = np.stack([lons for i in range(lats.shape[0])],axis=0)
+    if poly_raster_path.exists():
+        pir,metadata,(sub_slice,old_latlon_bounds),_ = pickle.load(
+                poly_raster_path.open("rb"))
+        ## delete existing file if bounds used to calculate it are out of date
+        if old_latlon_bounds != (geo[2:], geo[:2]):
+            poly_raster_path.unlink()
+        print(f"Loaded poly raster path from {poly_raster_path.as_posix()}")
     if not poly_raster_path.exists():
         print(f"Needed polygon raster doesn't exist at {poly_raster_path}.",
                 "Generating it now.")
@@ -730,18 +737,15 @@ def make_countyfd_plots(lons,lats,fd11,geo,title1,fname1,region,smvi_thresh):
                 )
         yslc,xslc = sub_slice
         latlon = (lat2d[yslc,xslc],lon2d[yslc,xslc])
-        pickle.dump((pir,metadata,sub_slice,latlon),
+        pickle.dump((pir,metadata,(sub_slice,(lat_bounds,lon_bounds),latlon),
                 poly_raster_path.open("wb"))
         print(f"Created new poly raster file at {poly_raster_path.as_posix()}")
-    else:
-        pir,metadata,sub_slice,_ = pickle.load(
-                poly_raster_path.open("rb"))
-        print(f"Loaded poly raster path from {poly_raster_path.as_posix()}")
-    fd11 = fd11[sub_slice[0], sub_slice[1]]-1
+
+    fd11 = fd11[sub_slice[0], sub_slice[1]]-1 ## unique values: [-1, 0, 1]
     poly_smvi = apply_by_polygon(
         dataset=np.where(fd11>=0,fd11,np.nan),
         poly_int_raster=pir,
-        agg_func=lambda x:(np.average(x)>smvi_thresh).astype(int),
+        agg_func=lambda x:(np.nanmean(x)>smvi_thresh).astype(int),
         output_oob_value=np.nan,
         )
     poly_smvi = np.where(poly_smvi>=0, poly_smvi+1, 0)
@@ -754,6 +758,11 @@ def make_countyfd_plots(lons,lats,fd11,geo,title1,fname1,region,smvi_thresh):
         latlon_ticks=False,
         shapes=[geoms[md["poly_idx"]] for md in metadata],
         cbar_ticks=True,
+        int_labels=[
+            "Out Of Domain",
+            f"SMVI Fraction <= {smvi_thresh}",
+            f"SMVI Fraction > {smvi_thresh}",
+            ],
         plot_spec={
             "cbar_pad":0.02,
             "cbar_orient":"horizontal",

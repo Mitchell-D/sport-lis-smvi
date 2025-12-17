@@ -4,6 +4,8 @@ import geopandas as gpd
 import pickle as pkl
 import argparse
 import re
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 from multiprocessing import Pool
 from pathlib import Path
 from datetime import datetime
@@ -47,9 +49,13 @@ def build_parser():
     """ CLI parser """
     def valid_domain(value):
         """Validate domain"""
-        if not value in geog.keys():
-            raise ValueError(
-                f"domain {value} must be one of {list(geog.keys())}")
+        domains = value.split(",")
+        if "all" in domains:
+            return
+        for d in domains:
+            if not d in geog.keys():
+                raise ValueError(
+                    f"domain {d} must be one of {list(geog.keys())}")
 
     def valid_date(value):
         """Validate YYYYmmdd format."""
@@ -66,10 +72,12 @@ def build_parser():
         return value
 
     parser = argparse.ArgumentParser(
-        description="Specify a region and time range for SPoRT-LIS SMVI")
+        description="Calculate and plot SMVI with SPoRT-LIS data")
     parser.add_argument(
         "domain", type=str,
-        help="Domain to process (string).")
+        help="One or more geographic domains to process. May be a " + \
+            "comma-separated list with NO SPACES. Must be 'all' or a"
+            f" subset of:\n{list(geog.keys())}")
     parser.add_argument(
         "start_day", type=valid_date,
         help="Start day in YYYYmmdd format.")
@@ -78,7 +86,7 @@ def build_parser():
         help="Optional end day in YYYYmmdd format.")
     parser.add_argument(
         "-d", "--day_of_week", type=valid_day_of_week, default="ALL",
-        help=f"String depicting day of week. Options: {dow_options}")
+        help=f"Optional string depicting day of week. Options: {dow_options}")
     parser.add_argument(
         "-t", "--threshold", type=float, default=0.3,
         help="SMVI threshold pixel ratio for activation (default: 0.3).")
@@ -103,7 +111,7 @@ if __name__=="__main__":
     poly_name = "counties"
 
     ## directory where pkls containing poly raster domains are stored
-    poly_raster_dir = Path("data/poly2")
+    poly_raster_dir = Path("data/poly")
     new_poly_raster = False ## if True, always re-generates poly rasters
 
     ## verify that required files/directories exist
@@ -114,13 +122,15 @@ if __name__=="__main__":
     assert shapefile.exists(),shapefile
     assert poly_raster_dir.exists(),poly_raster_dir
 
-    ## sc1 file naming scheme
+    ## sc1 file naming scheme. supports yyyy, yyyymm, and yyyymmdd templates
     percentile_file_pattern="{yyyy}/vsm_percentile_{yyyymmdd}.grb2"
     hist_file_pattern="{yyyymm}/LIS_HIST_{yyyymmdd}0000.d01.grb2"
 
-    ## labels of soil layers
+    ## labels of soil layers. these are progressively integrated from first to
+    ## last given the depths when integrate_layers is set to True.
     soilm_labels = ["soilm-10", "soilm-40", "soilm-100", "soilm-200"]
     layer_depths = [.1, .3, .6, 1.]
+    integrate_layers = True
 
     ## plotting options for smvi
     plot_binary_smvi = True
@@ -136,11 +146,8 @@ if __name__=="__main__":
 
     ## parse cli arguments
     args = build_parser().parse_args()
-    bbox_name = args.domain
-    assert bbox_name in geog.keys(), \
-            f"domain '{bbox_name}' must be one of {list(geog.keys())}"
-    lat_bounds = geog[bbox_name][2:]
-    lon_bounds = geog[bbox_name][:2]
+    domains = args.domain.split(",")
+    domains = list(geog.keys()) if "all" in domains else domains
     start_time = datetime.strptime(args.start_day, "%Y%m%d")
     if args.end_day is None:
         end_time = start_time
@@ -163,129 +170,138 @@ if __name__=="__main__":
     ts0 = start_time.strftime("%Y%m%d")
     tsf = end_time.strftime("%Y%m%d")
 
-    ## if a new poly raster is needed or requested, generate it
-    poly_raster_path = poly_raster_dir.joinpath(
-            f"poly-raster_{poly_name}_{bbox_name}.pkl")
-    if new_poly_raster or not poly_raster_path.exists():
-        ## generate a raster file assigning each pixel to a county polygon
-        pir,metadata,sub_slice = get_poly_raster(
-                latitudes=lat,
-                longitudes=lon,
-                shapefile=shapefile,
-                lat_bounds=lat_bounds,
-                lon_bounds=lon_bounds,
-                shapefile_columns=[
-                    "STATE","CWA","COUNTYNAME","FIPS","TIME_ZONE",
-                    "FE_AREA","LON","LAT","Shape_Area"],
-                return_subgrid_slices=True,
-                debug=debug,
-                )
-        yslc,xslc = sub_slice
-        latlon = (lat[yslc,xslc],lon[yslc,xslc])
-        pkl.dump((pir,metadata,sub_slice,latlon), poly_raster_path.open("wb"))
-    else:
-        assert poly_raster_path.exists(),poly_raster_path
-        ## don't load the subset latlon;, let get_sportlis_smvi get the bounds
-        pir,metadata,sub_slice,_ = pkl.load(
-                poly_raster_path.open("rb"))
+    for bbox_name in domains:
+        lat_bounds = geog[bbox_name][2:]
+        lon_bounds = geog[bbox_name][:2]
+        ## if a new poly raster is needed or requested, generate it
+        poly_raster_path = poly_raster_dir.joinpath(
+                f"poly-raster_{poly_name}_{bbox_name}.pkl")
+        if poly_raster_path.exists() and not new_poly_raster:
+            assert poly_raster_path.exists(),poly_raster_path
+            print(f"Loading poly raster at {poly_raster_path}")
+            ## don't load the subset latlon;, let get_sportlis_smvi get bounds
+            pir,metadata,(sub_slice,old_latlon_bounds),_ = pkl.load(
+                    poly_raster_path.open("rb"))
+            ## overwrite if bounds of stored file are out of date
+            if old_latlon_bounds != (lat_bounds,lon_bounds):
+                new_poly_raster = True
+        if new_poly_raster or not poly_raster_path.exists():
+            print(f"Generating new poly raster at {poly_raster_path}")
+            ## generate a raster file assigning each pixel to a county polygon
+            pir,metadata,sub_slice = get_poly_raster(
+                    latitudes=lat,
+                    longitudes=lon,
+                    shapefile=shapefile,
+                    lat_bounds=lat_bounds,
+                    lon_bounds=lon_bounds,
+                    shapefile_columns=[
+                        "STATE","CWA","COUNTYNAME","FIPS","TIME_ZONE",
+                        "FE_AREA","LON","LAT","Shape_Area"],
+                    return_subgrid_slices=True,
+                    debug=debug,
+                    )
+            yslc,xslc = sub_slice
+            latlon = (lat[yslc,xslc],lon[yslc,xslc])
+            pkl.dump((pir,metadata,(sub_slice,(lat_bounds,lon_bounds)),latlon),
+                    poly_raster_path.open("wb"))
 
-    ## indices of soil layers wrt the LIS_HIST file records
-    hist_soilm_record_idxs = [rlabels_hist.index(l) for l in soilm_labels]
-    ## indices of soil layers wrt the percentile file records
-    pct_soilm_record_idxs = [rlabels_pct.index(l) for l in soilm_labels]
+        ## indices of soil layers wrt the LIS_HIST file records
+        hist_soilm_record_idxs = [rlabels_hist.index(l) for l in soilm_labels]
+        ## indices of soil layers wrt the percentile file records
+        pct_soilm_record_idxs = [rlabels_pct.index(l) for l in soilm_labels]
 
-    plotted_files = {}
-    ## calculate SMVI over the specified date range, using the same bounds as
-    ## the county polygon raster
-    smvi,dates,(hist_files,pct_files) = get_sportlis_smvi(
-        hist_file_dir=hist_parent_dir,
-        percentile_file_dir=pctl_parent_dir,
-        hist_record_indices=hist_soilm_record_idxs,
-        percentile_record_indices=pct_soilm_record_idxs,
-        layer_depths=layer_depths,
-        integrate_layers=True,
-        start_time=start_time,
-        end_time=end_time,
-        lat_bounds=lat_bounds,
-        lon_bounds=lon_bounds,
-        smvi_config=SMVIConfig(),
-        nworkers=nworkers,
-        ngroups=ngroups,
-        latitudes=lat,
-        longitudes=lon,
-        percentile_file_pattern=percentile_file_pattern,
-        hist_file_pattern=hist_file_pattern,
-        return_source_files=True,
-        debug=debug,
-        )
-
-    ## get the relevant counties from the indeces in the metadata
-    gdf = gpd.read_file(shapefile)
-    polys = [gdf["geometry"][md["poly_idx"]] for md in metadata]
-
-    if plot_percentile_and_smvi:
-        if debug:
-            print(f"loading {len(pct_files)} percentile gribs")
-        pct_data,_ = load_sportlis_gribs(
-                grib_paths=pct_files,
-                record_indices=pct_soilm_record_idxs,
-                slice_bounds=sub_slice,
-                return_original_shape=True,
-                mask_value=9999.,
-                debug=debug,
-                )
-
-        args = [{
-            "percentile_data":pct_data[tix,:,:,fix],
-            "smvi_data":(smvi[tix,:,:,fix]==1),
-            "lat":lat[sub_slice[0], sub_slice[1]],
-            "lon":lon[sub_slice[0], sub_slice[1]],
-            "fstr":fstr,
-            "fig_path":fig_dir.joinpath(
-                f"smvi_pixelwise-percentile_{bbox_name}_" + \
-                        f"{dt.strftime('%Y%m%d')}_{fstr}.png"),
-            "polys":polys,
-            "smvi_thresh":smvi_thresh,
-            "date":dt,
-            }
-            for tix,dt in enumerate(dates)
-            for fix,fstr in enumerate(soilm_labels)
-            if plot_day_of_week is None or dt.weekday()==plot_day_of_week
-            ]
-        with Pool(nworkers) as pool:
-            for p in pool.imap_unordered(mp_plot_percentile_and_smvi, args):
-                print(f"Generated {p.as_posix()}")
-
-    if plot_binary_smvi:
-        ## apply a function to each polygon returning 1 when the fraction of
-        ## pixels in the polygon > smvi_thresh, 0 otherwise.
-        poly_smvi = apply_by_polygon(
-            dataset=smvi,
-            poly_int_raster=pir,
-            agg_func=lambda x:(np.average(x)>smvi_thresh).astype(int),
-            output_oob_value=np.nan,
+        plotted_files = {}
+        ## calculate SMVI over the specified date range, using the same bounds
+        ## as the county polygon raster
+        smvi,dates,(hist_files,pct_files) = get_sportlis_smvi(
+            hist_file_dir=hist_parent_dir,
+            percentile_file_dir=pctl_parent_dir,
+            hist_record_indices=hist_soilm_record_idxs,
+            percentile_record_indices=pct_soilm_record_idxs,
+            layer_depths=layer_depths,
+            integrate_layers=integrate_layers,
+            start_time=start_time,
+            end_time=end_time,
+            lat_bounds=lat_bounds,
+            lon_bounds=lon_bounds,
+            smvi_config=SMVIConfig(),
+            nworkers=nworkers,
+            ngroups=ngroups,
+            latitudes=lat,
+            longitudes=lon,
+            percentile_file_pattern=percentile_file_pattern,
+            hist_file_pattern=hist_file_pattern,
+            return_source_files=True,
+            debug=debug,
             )
-        ## modify the ints so that 0 is out of bounds, 1 is in-bounds but SMVI
-        ## below threshold, and 2 represents polygons exceeding the threshold
-        poly_smvi = np.where(poly_smvi>=0, poly_smvi+1, 0)
 
-        args = [{
-            "int_data":poly_smvi[tix,:,:,fix],
-            "lat":lat[sub_slice[0], sub_slice[1]],
-            "lon":lon[sub_slice[0], sub_slice[1]],
-            "fstr":fstr,
-            "fig_path":fig_dir.joinpath(
-                f"smvi_binary_{bbox_name}_{poly_name}_" + \
-                        f"{dt.strftime('%Y%m%d')}_{fstr}.png"),
-            "polys":polys,
-            "smvi_thresh":smvi_thresh,
-            "date":dt,
-            }
-            for tix,dt in enumerate(dates)
-            for fix,fstr in enumerate(soilm_labels)
-            if plot_day_of_week is None or dt.weekday()==plot_day_of_week
-            ]
+        ## get the relevant counties from the indeces in the metadata
+        gdf = gpd.read_file(shapefile)
+        polys = [gdf["geometry"][md["poly_idx"]] for md in metadata]
 
-        with Pool(nworkers) as pool:
-            for p in pool.imap_unordered(mp_plot_binary_smvi, args):
-                print(f"Generated {p.as_posix()}")
+        if plot_percentile_and_smvi:
+            if debug:
+                print(f"loading {len(pct_files)} percentile gribs")
+            pct_data,_ = load_sportlis_gribs(
+                    grib_paths=pct_files,
+                    record_indices=pct_soilm_record_idxs,
+                    slice_bounds=sub_slice,
+                    return_original_shape=True,
+                    mask_value=9999.,
+                    debug=debug,
+                    )
+
+            args = [{
+                "percentile_data":pct_data[tix,:,:,fix],
+                "smvi_data":(smvi[tix,:,:,fix]==1),
+                "lat":lat[sub_slice[0], sub_slice[1]],
+                "lon":lon[sub_slice[0], sub_slice[1]],
+                "fstr":fstr,
+                "fig_path":fig_dir.joinpath(
+                    f"smvi_pixelwise-percentile_{bbox_name}_" + \
+                            f"{dt.strftime('%Y%m%d')}_{fstr}.png"),
+                "polys":polys,
+                "smvi_thresh":smvi_thresh,
+                "date":dt,
+                }
+                for tix,dt in enumerate(dates)
+                for fix,fstr in enumerate(soilm_labels)
+                if plot_day_of_week is None or dt.weekday()==plot_day_of_week
+                ]
+            with Pool(nworkers) as pool:
+                for p in pool.imap_unordered(mp_plot_percentile_and_smvi,args):
+                    print(f"Generated {p.as_posix()}")
+
+        if plot_binary_smvi:
+            ## apply a function to each polygon returning 1 when the fraction
+            ## of pixels in the polygon > smvi_thresh, 0 otherwise.
+            poly_smvi = apply_by_polygon(
+                    dataset=smvi, ## unique values: [-1, 0, 1]
+                poly_int_raster=pir,
+                agg_func=lambda x:(np.nanmean(x)>smvi_thresh).astype(int),
+                output_oob_value=np.nan,
+                )
+            ## modify the ints so that 0 is out of bounds, 1 in-bounds but SMVI
+            ## below threshold, and 2 for polygons exceeding the threshold
+            poly_smvi = np.where(poly_smvi>=0, poly_smvi+1, 0)
+
+            args = [{
+                "int_data":poly_smvi[tix,:,:,fix],
+                "lat":lat[sub_slice[0], sub_slice[1]],
+                "lon":lon[sub_slice[0], sub_slice[1]],
+                "fstr":fstr,
+                "fig_path":fig_dir.joinpath(
+                    f"smvi_binary_{bbox_name}_{poly_name}_" + \
+                            f"{dt.strftime('%Y%m%d')}_{fstr}.png"),
+                "polys":polys,
+                "smvi_thresh":smvi_thresh,
+                "date":dt,
+                }
+                for tix,dt in enumerate(dates)
+                for fix,fstr in enumerate(soilm_labels)
+                if plot_day_of_week is None or dt.weekday()==plot_day_of_week
+                ]
+
+            with Pool(nworkers) as pool:
+                for p in pool.imap_unordered(mp_plot_binary_smvi, args):
+                    print(f"Generated {p.as_posix()}")

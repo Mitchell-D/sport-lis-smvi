@@ -6,11 +6,11 @@ from pathlib import Path
 from plotting import plot_geo_ints
 
 locales = ["al", "ca", "dakotas", "fl", "in", "la", "matl", "midwest", "mt",
-        "nc", "neus", "nwus", "swus", "conus"]
-#poly_raster_dir = Path("/usr/people/mdodson/sport-lis-smvi/data/poly2")
-#fig_dir = Path("/usr/people/mdodson/sport-lis-smvi/figures/poly2")
-poly_raster_dir = Path("/usr/people/mdodson/sport-lis-smvi/data/poly")
-fig_dir = Path("/usr/people/mdodson/sport-lis-smvi/figures/poly")
+        "nc", "neus", "nwus", "swus", "conus", "tn"]
+poly_raster_dir = Path("/usr/people/mdodson/sport-lis-smvi/data/poly-jon")
+fig_dir = Path("/usr/people/mdodson/sport-lis-smvi/figures/poly-jon")
+#poly_raster_dir = Path("/usr/people/mdodson/sport-lis-smvi/data/poly")
+#fig_dir = Path("/usr/people/mdodson/sport-lis-smvi/figures/poly")
 shapefile_path = Path("data/shapefiles/c_15au13.shp")
 
 for l in locales:

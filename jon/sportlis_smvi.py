@@ -10,17 +10,17 @@ import lis_utils as utils
 #from helpers import get_bounding_latlon_slice
 
 use_jon_method = False
-plotfd = False
-plotraster = True
+plotfd = True
+plotraster = False
 dogrid = True
 dosubset = False
 geo_subset = [-92.0, -79.0, 30.0, 40.0] # SEUS 2016 flash drought
-smvi_thresh = .3 ## ratio of SMVI pixels per county for it to be "active"
+smvi_thresh = 0.3 ## ratio of SMVI pixels per county for it to be "active"
 
 DATADIR = f'/raid2/sport/people/casejl/LIS7/OUTPUT/conus3km/SURFACEMODEL'
 #COUNTYDIR = f'{DATADIR}/county_percentile'
 GRIDDIR = f'{DATADIR}/grid_percentile'
-OUTDIR = '/usr/people/mdodson/sport-lis-smvi/figures/jon'
+OUTDIR = '/usr/people/mdodson/sport-lis-smvi/figures/jon-mod'
 
 map_proj = ccrs.PlateCarree()
 data_trans = ccrs.PlateCarree()
@@ -28,8 +28,9 @@ data_trans = ccrs.PlateCarree()
 #region_list = ['nc', 'neus', 'matl', 'al', 'fl', 'tn', 'tx', 'in', 'midwest',
 #               'dakotas', 'swus', 'nwus', 'ca', 'conus']
 
-region_list = ["al", "ca", "dakotas", "fl", "in", "la", "matl", "midwest",
-    "mt", "nc", "neus", "nwus", "swus", "conus"]
+region_list = ["la", "al", "ca", "dakotas", "fl", "in", "matl", "midwest",
+    "mt", "nc", "neus", "nwus", "swus", "conus", "tn", "tx"]
+#region_list = ["tx"]
 
 #region_list = ['conus', 'al', 'nc']
 #region_list = ['mt']
@@ -181,8 +182,6 @@ if __name__ == '__main__':
             fd11, fd12, fd13, fd14 = \
                 utils.get_fd_array(vsm11, vsm12, vsm13, vsm14, nlats, nlons, nn,
                         jon_method=use_jon_method)
-        print(fd11.shape, fd12.shape, fd13.shape, fd14.shape)
-        exit(0)
 
         # Check that percentiles fell below 20. If so, set flash_drought arrays
         # to 2.0 to signify flash drought criteria fully met.

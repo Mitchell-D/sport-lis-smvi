@@ -162,7 +162,6 @@ def get_sportlis_smvi(
         "pct_thresh":smvi_config.last_day_percentile_cutoff,
         "debug":debug,
         } for i in range(ngroups)]
-    pprint(args)
     if debug:
         print(f"{perf_counter():.3f} Initializing SMVI workers ")
     smvi = []
