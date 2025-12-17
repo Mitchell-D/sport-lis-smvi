@@ -54,7 +54,8 @@ if __name__=="__main__":
 
     ## configure geographic and temporal ranges, and data features for which
     ## to calculate daily county-wise SMVI
-    lat_bounds,lon_bounds,bbox_name = (28.,34.),(-96.,-87.8),"Louisiana"
+    lat_bounds,lon_bounds,bbox_name = (27.5,34.0),(-100.,-87.8),"Louisiana"
+    #lat_bounds,lon_bounds,bbox_name = (28.,34.),(-96.,-87.8),"Louisiana"
     #lat_bounds,lon_bounds,bbox_name = (32,38),(-87,-79),"EastTN"
     #lat_bounds,lon_bounds,bbox_name = (24.5,31.5),(-88,-80),"Florida"
 
@@ -77,7 +78,7 @@ if __name__=="__main__":
     plot_fractional_smvi = False
     plot_binary_smvi = False
     plot_pixelwise_smvi = False
-    plot_percentile_and_smvi = True
+    plot_percentile_and_smvi = False
 
     ## percentage threshold of SMVI positive pixels in a polygon in order for
     ## that polygon to be considered "active" in binary plots
@@ -354,8 +355,10 @@ if __name__=="__main__":
                     lon=lon,
                     int_labels=[
                         "Out of Domain",
-                        f"SMVI Fraction <= {smvi_thresh}",
-                        f"SMVI Fraction > {smvi_thresh}",
+                        #f"SMVI Fraction <= {smvi_thresh}",
+                        #f"SMVI Fraction > {smvi_thresh}",
+                        f"Drought Area <= {smvi_thresh*100}%",
+                        f"Drought Area > {smvi_thresh*100}%",
                         ],
                     fig_path=fig_path,
                     latlon_ticks=False,
@@ -368,8 +371,10 @@ if __name__=="__main__":
                         "cbar_fontsize":14,
                         "tick_frequency":12,
                         "tick_rotation":45,
-                        "title":f"Counties with >{smvi_thresh*100}% SMVI" + \
-                                f" {fstr} ({tstr2})",
+                        #"title":f"Counties with >{smvi_thresh*100}% SMVI" + \
+                        #        f" {fstr} ({tstr2})",
+                        "title":f"Counties with >{smvi_thresh*100}% " + \
+                                f"Flash Drought Coverage ({tstr2})",
                         "tile_fontsize":18,
                         "interpolation":"none",
                         "shape_params":{

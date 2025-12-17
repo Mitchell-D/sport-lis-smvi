@@ -106,18 +106,19 @@ def get_sportlis_smvi(
     t = start_time - timedelta(days=lag_days)
     while t <= end_time:
         tstr = t.strftime("%Y%m%d")
-        hist_dates.append(tstr)
+        sfmt = {"yyyymmdd":tstr,"yyyymm":tstr[:6],"yyyy":tstr[:4]}
+        hist_dates.append(sfmt)
         if t >= start_time:
-            pct_dates.append(tstr)
+            pct_dates.append(sfmt)
             pct_datetimes.append(t)
         t += timedelta(days=1)
 
     ## explicitly calculate the needed file names given the earthdata scheme,
     ## and make sure they exist in the provided directories.
-    req_hist = [hist_file_dir.joinpath(fphist.format(yyyymmdd=tstr))
-                for tstr in hist_dates]
-    req_pct = [percentile_file_dir.joinpath(fppct.format(yyyymmdd=tstr))
-                for tstr in pct_dates]
+    req_hist = [hist_file_dir.joinpath(fphist.format(**sfmt))
+                for sfmt in hist_dates]
+    req_pct = [percentile_file_dir.joinpath(fppct.format(**sfmt))
+                for sfmt in pct_dates]
     for p in req_hist + req_pct:
         if not p.exists():
             raise ValueError(f"Missing required file: {p.as_posix()}")
@@ -135,6 +136,11 @@ def get_sportlis_smvi(
 
     ## get the bounding box of the subgrid desired for analysis
     slice_bounds = get_bounding_latlon_slice(lat, lon, lat_bounds, lon_bounds)
+
+    if len(pct_dates) < ngroups:
+        ngroups = len(pct_dates)
+    if nworkers > ngroups:
+        nworkers = ngroups
 
     ## break up the time series into groups
     wkr_steps = len(pct_dates) // ngroups
@@ -156,7 +162,6 @@ def get_sportlis_smvi(
         "pct_thresh":smvi_config.last_day_percentile_cutoff,
         "debug":debug,
         } for i in range(ngroups)]
-
     if debug:
         print(f"{perf_counter():.3f} Initializing SMVI workers ")
     smvi = []
@@ -192,13 +197,14 @@ def load_sportlis_gribs(grib_paths, record_indices, slice_bounds=None,
     if slice_bounds is None:
         slice_bounds = (slice(None), slice(None))
     data = []
+    yslc,xslc = slice_bounds
     for p in grib_paths:
-        with pygrib.open(p) as pgf:
+        with pygrib.open(p.as_posix()) as pgf:
             tmp_feats = []
             for rix in record_indices:
                 pgf.seek(rix)
                 ## nldas convention is to index latitude low to high
-                x = pgf.readline().values.data[::-1][*slice_bounds]
+                x = pgf.readline().values.data[::-1][yslc,xslc]
                 ## hist files use 9999. as a mask value
                 if m_valid is None:
                     m_valid = ~np.isclose(x, mask_value)
