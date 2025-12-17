@@ -10,8 +10,8 @@ import lis_utils as utils
 #from helpers import get_bounding_latlon_slice
 
 use_jon_method = False
-plotfd = True
-plotraster = False
+plotfd = False
+plotcountyraster = True
 dogrid = True
 dosubset = False
 geo_subset = [-92.0, -79.0, 30.0, 40.0] # SEUS 2016 flash drought
@@ -221,7 +221,7 @@ if __name__ == '__main__':
             fname4 = f'{OUTDIR}/vsm0-200percent_{edate}_00z_{region}.png'
             utils.make_fd_plots(lons, lats, perc14, fd14, geo, title4, fname4, region)
 
-    if plotraster:
+    if plotcountyraster:
         title1 = (f'0-10 cm SMVI Flash Drought County Activation {vdate} ')
         title2 = (f'0-40 cm SMVI Flash Drought County Activation {vdate} ')
         title3 = (f'0-100 cm SMVI Flash Drought County Activation {vdate} ')

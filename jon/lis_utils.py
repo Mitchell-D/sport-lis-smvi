@@ -737,7 +737,7 @@ def make_countyfd_plots(lons,lats,fd11,geo,title1,fname1,region,smvi_thresh):
                 )
         yslc,xslc = sub_slice
         latlon = (lat2d[yslc,xslc],lon2d[yslc,xslc])
-        pickle.dump((pir,metadata,(sub_slice,(lat_bounds,lon_bounds),latlon),
+        pickle.dump((pir,metadata,(sub_slice,(geo[2:],geo[:2])),latlon),
                 poly_raster_path.open("wb"))
         print(f"Created new poly raster file at {poly_raster_path.as_posix()}")
 
