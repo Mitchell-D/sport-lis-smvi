@@ -119,7 +119,7 @@ def plot_geo_ints(int_data, lat, lon, shapes=None,
     ax.set_title(ps.get("title", ""), fontsize=ps.get("title_fontsize", 18))
     if not fig_path is None:
         fig.set_size_inches(*ps.get("figsize"))
-        fig.savefig(fig_path.as_posix(), bbox_inches="tight",dpi=80)
+        fig.savefig(fig_path.as_posix(), bbox_inches="tight",dpi=ps.get("dpi", 80))
     if show:
         plt.show()
     plt.close()
@@ -348,17 +348,26 @@ def plot_percentile_and_smvi(
             "fontsize_labels":8,
             "custom_cmap_params":{
                 "colors":[
-                    "#C52104", ## 2-5
-                    "#FA5B0F", ## 5-10
-                    "#F28705", ## 10-20
-                    "#F2B807", ## 20-30
+                    [0.4196, 0.0, 0.0], ## 2-5
+                    [0.9216, 0.0, 0.0], ## 5-10
+                    [0.9216, 0.4588, 0.0], ## 10-20
+                    [1.0, 0.702, 0.4], ## 20-30
+                    [0.7843, 0.7843, 0.7843], ## 30-70
+                    [0.5882, 0.8235, 0.9804], ## 70-80
+                    [0.3137, 0.6471, 0.9608], ## 80-90
+                    [0.1569, 0.5098, 0.9412], ## 90-95
+                    [0.0784, 0.3922, 0.8235], ## 95-98
+                    #"#C52104", ## 2-5
+                    #"#FA5B0F", ## 5-10
+                    #"#F28705", ## 10-20
+                    #"#F2B807", ## 20-30
                     #"#FEF7CC", ## 30-50
                     #"#CCD3FE", ## 50-70
-                    "#E3E1E1", ## 30-70
-                    "#2998FF", ## 70-80
-                    "#0068C4", ## 80-90
-                    "#004B8D", ## 90-95
-                    "#00294D", ## 95-98
+                    #"#E3E1E1", ## 30-70
+                    #"#2998FF", ## 70-80
+                    #"#0068C4", ## 80-90
+                    #"#004B8D", ## 90-95
+                    #"#00294D", ## 95-98
                     ],
                 "bounds":[2,5,10,20,30,70,80,90,95,98],
                 "extremes":("#710301", "#082136"),
@@ -369,6 +378,7 @@ def plot_percentile_and_smvi(
                 "facecolor":"none",
                 "alpha":.8,
                 },
+            "dpi":120,
             },
         )
     return fig_path
