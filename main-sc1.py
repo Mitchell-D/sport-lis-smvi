@@ -234,6 +234,7 @@ if __name__=="__main__":
             return_source_files=True,
             debug=debug,
             )
+        #np.save("tmp/smvi_la_20230909_mitchell.npy",smvi)
 
         ## get the relevant counties from the indeces in the metadata
         gdf = gpd.read_file(shapefile)
@@ -276,14 +277,17 @@ if __name__=="__main__":
             ## apply a function to each polygon returning 1 when the fraction
             ## of pixels in the polygon > smvi_thresh, 0 otherwise.
             poly_smvi = apply_by_polygon(
-                    dataset=smvi, ## unique values: [-1, 0, 1]
+                dataset=smvi, ## unique values: [-1, 0, 1]
                 poly_int_raster=pir,
                 agg_func=lambda x:(np.nanmean(x)>smvi_thresh).astype(int),
+                data_oob_value=-1,
+                poly_oob_value=-1,
                 output_oob_value=np.nan,
                 )
             ## modify the ints so that 0 is out of bounds, 1 in-bounds but SMVI
             ## below threshold, and 2 for polygons exceeding the threshold
             poly_smvi = np.where(poly_smvi>=0, poly_smvi+1, 0)
+            #np.save("tmp/poly-smvi_la_20230909_mitchell.npy",poly_smvi)
 
             args = [{
                 "int_data":poly_smvi[tix,:,:,fix],

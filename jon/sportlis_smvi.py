@@ -25,18 +25,26 @@ OUTDIR = '/usr/people/mdodson/sport-lis-smvi/figures/jon-mod'
 map_proj = ccrs.PlateCarree()
 data_trans = ccrs.PlateCarree()
 
+## all regions
+region_list = ["la", "al", "ca", "dakotas", "fl", "in", "matl", "midwest",
+    "mt", "nc", "neus", "nwus", "swus", "conus", "tn", "tx", "sedews"]
+
+region_list = ["la", "al", "ca", "dakotas", "fl"]
+#region_list = ["in", "matl", "midwest", "mt", "nc"]
+#region_ist = ["neus", "nwus", "swus", "conus"]
+#region_list = ["tn", "tx", "sedews"]
+
 #region_list = ['nc', 'neus', 'matl', 'al', 'fl', 'tn', 'tx', 'in', 'midwest',
 #               'dakotas', 'swus', 'nwus', 'ca', 'conus']
 
-region_list = ["la", "al", "ca", "dakotas", "fl", "in", "matl", "midwest",
-    "mt", "nc", "neus", "nwus", "swus", "conus", "tn", "tx"]
 #region_list = ["tx"]
 
 #region_list = ['conus', 'al', 'nc']
 #region_list = ['mt']
 #region_list = ['la', 'al', 'sedews']
+#region_list = ['la']
+#region_list = ['conus']
 #region_list = ['sedews']
-#region_list = ['neus']
 
 ###################################
 # Beginning of main
@@ -160,6 +168,9 @@ if __name__ == '__main__':
         vsm13 = (10.0*vsm1 + 30.0*vsm2 + 60.0*vsm3) / 100.0
         vsm14 = (10.0*vsm1 + 30.0*vsm2 + 60.0*vsm3 + 100.0*vsm4) / 200.0
 
+        ## capture a mask over pixels that are valid data values so that it
+        m_valid = np.all(np.isfinite(vsm1), axis=0)
+
         perc11 = perc_grid.isel(lv_DBLL0=0).to_numpy()
         perc12 = perc_grid.isel(lv_DBLL0=1).to_numpy()
         perc13 = perc_grid.isel(lv_DBLL0=2).to_numpy()
@@ -222,6 +233,13 @@ if __name__ == '__main__':
             utils.make_fd_plots(lons, lats, perc14, fd14, geo, title4, fname4, region)
 
     if plotcountyraster:
+        ## smvi arrays are numbered 1 if they meet the moving average condition
+        ## but not percentile, and 2 if they meet both conditions. Modify the
+        ## arrays here so that they are 0 if out of bounds, 1 if in bounds but
+        ## don't meet both conditions, and 2 if they meet both
+        smvi = np.stack([fd11,fd12,fd13,fd14], axis=0)
+        smvi = np.where(m_valid, np.where(smvi==0, 1, smvi), 0)
+
         title1 = (f'0-10 cm SMVI Flash Drought County Activation {vdate} ')
         title2 = (f'0-40 cm SMVI Flash Drought County Activation {vdate} ')
         title3 = (f'0-100 cm SMVI Flash Drought County Activation {vdate} ')
@@ -235,16 +253,16 @@ if __name__ == '__main__':
             geo = utils.geog[region]
             print(f'  -{edate} 0-10 cm County Raster FD Activation')
             utils.make_countyfd_plots(
-                    lons, lats, fd11, geo, title1, fname1, region, smvi_thresh)
+                lons, lats, smvi[0], geo, title1, fname1, region, smvi_thresh)
             print(f'  -{edate} 0-40 cm County Raster FD Activation')
             utils.make_countyfd_plots(
-                    lons, lats, fd12, geo, title2, fname2, region, smvi_thresh)
+                lons, lats, smvi[1], geo, title2, fname2, region, smvi_thresh)
             print(f'  -{edate} 0-100 cm County Raster FD Activation')
             utils.make_countyfd_plots(
-                    lons, lats, fd13, geo, title3, fname3, region, smvi_thresh)
+                lons, lats, smvi[2], geo, title3, fname3, region, smvi_thresh)
             print(f'  -{edate} 0-200 cm County Raster FD Activation')
             utils.make_countyfd_plots(
-                    lons, lats, fd14, geo, title4, fname4, region, smvi_thresh)
+                lons, lats, smvi[3], geo, title4, fname4, region, smvi_thresh)
 
 
 sys.exit()

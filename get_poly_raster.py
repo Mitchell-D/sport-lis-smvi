@@ -9,7 +9,8 @@ from time import perf_counter
 from helpers import get_bounding_latlon_slice
 
 def apply_by_polygon(dataset, poly_int_raster, agg_func,
-        dtype=np.float32, poly_oob_value=-1, output_oob_value=np.nan):
+        dtype=np.float32, poly_oob_value=-1, data_oob_value=-1,
+        output_oob_value=np.nan):
     """
     Given a (N,Y,X,F) dataset and a (Y,X) polygon integer raster array
     (returned by get_poly_raster), apply a function mapping all pixels within
@@ -18,14 +19,20 @@ def apply_by_polygon(dataset, poly_int_raster, agg_func,
     value returned by the function.
     """
     out = np.full(dataset.shape, output_oob_value, dtype=dtype)
+    m_valid = np.all(dataset != data_oob_value, axis=(0,3)) \
+            & (poly_int_raster != poly_oob_value)
     for pix in np.unique(poly_int_raster):
         if pix==poly_oob_value:
             continue
-        m_pix = poly_int_raster==pix
-        tmp = np.apply_along_axis(
-                func1d=agg_func, axis=1, arr=dataset[:,m_pix]
+        m_pix = (poly_int_raster==pix) & m_valid
+        if not np.any(m_pix):
+            continue
+        out[:,m_pix] = np.apply_along_axis(
+                func1d=agg_func,
+                axis=1,
+                arr=dataset[:,m_pix],
                 )[:,np.newaxis]
-        out[:,m_pix,:] = tmp
+    out[:,~m_valid] = output_oob_value
     return out
 
 def get_poly_raster(latitudes, longitudes, shapefile:Path,

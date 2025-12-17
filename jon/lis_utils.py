@@ -325,7 +325,7 @@ def get_fd_array(v11, v12, v13, v14, nlat, nlon, nt, jon_method=True):
         fd2 = np.all(v12_05d[slc] < v12_20d[slc], axis=0).astype(float)
         fd3 = np.all(v13_05d[slc] < v13_20d[slc], axis=0).astype(float)
         fd4 = np.all(v14_05d[slc] < v14_20d[slc], axis=0).astype(float)
-
+    ## returned arrays are 1 if moving average condition is met, 0 otherwise
     return fd1, fd2, fd3, fd4
 
 
@@ -683,7 +683,8 @@ def get_poly_raster(latitudes, longitudes, shapefile:Path,
 
 
 def apply_by_polygon(dataset, poly_int_raster, agg_func,
-        dtype=np.float32, poly_oob_value=-1, output_oob_value=np.nan):
+        dtype=np.float32, data_oob_value=-1, poly_oob_value=-1,
+        output_oob_value=np.nan):
     """
     Given a (Y,X) dataset and a (Y,X) polygon integer raster array
     (returned by get_poly_raster), apply a function mapping all pixels within
@@ -692,15 +693,17 @@ def apply_by_polygon(dataset, poly_int_raster, agg_func,
     value returned by the function.
     """
     out = np.full(dataset.shape, output_oob_value, dtype=dtype)
+    m_valid = (dataset != data_oob_value) & (poly_int_raster != poly_oob_value)
     for pix in np.unique(poly_int_raster):
         if pix==poly_oob_value:
             continue
         m_pix = poly_int_raster==pix
-        tmp = np.apply_along_axis(
-                func1d=agg_func, axis=0, arr=dataset[m_pix]
+        out[m_pix] = np.apply_along_axis(
+                func1d=agg_func,
+                axis=0,
+                arr=dataset[m_pix & m_valid]
                 )
-        out[m_pix] = tmp
-    return out
+    return np.where(m_valid, out, output_oob_value)
 
 def make_countyfd_plots(lons,lats,fd11,geo,title1,fname1,region,smvi_thresh):
     poly_raster_path = Path(POLY_RASTER_DIR).joinpath(
@@ -741,14 +744,20 @@ def make_countyfd_plots(lons,lats,fd11,geo,title1,fname1,region,smvi_thresh):
                 poly_raster_path.open("wb"))
         print(f"Created new poly raster file at {poly_raster_path.as_posix()}")
 
+    lstr = fname1.split("/")[-1].split("_")[0]
     fd11 = fd11[sub_slice[0], sub_slice[1]]-1 ## unique values: [-1, 0, 1]
+    #fd11 = np.where(fd11>=0,fd11,np.nan)
+    #np.save(f"./tmp/smvi_la_20230909_jon-mod_{lstr}.npy",fd11)
     poly_smvi = apply_by_polygon(
-        dataset=np.where(fd11>=0,fd11,np.nan),
+        dataset=fd11,
         poly_int_raster=pir,
         agg_func=lambda x:(np.nanmean(x)>smvi_thresh).astype(int),
-        output_oob_value=np.nan,
+        poly_oob_value=-1, ## polygon OOB
+        data_oob_value=-1, ## smvi OOB
+        output_oob_value=np.nan, ## result OOB
         )
     poly_smvi = np.where(poly_smvi>=0, poly_smvi+1, 0)
+    #np.save(f"./tmp/poly-smvi_la_20230909_jon-mod_{lstr}.npy",poly_smvi)
     geoms = tuple(counties.geometries())
     plot_geo_ints(
         int_data=poly_smvi,
