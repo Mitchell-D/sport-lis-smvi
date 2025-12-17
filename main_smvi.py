@@ -114,6 +114,10 @@ if __name__=="__main__":
     poly_raster_dir = Path("data/poly")
     new_poly_raster = False ## if True, always re-generates poly rasters
 
+    ## sc1 file naming scheme. supports yyyy, yyyymm, and yyyymmdd templates
+    percentile_file_pattern="{yyyy}/vsm_percentile_{yyyymmdd}.grb2"
+    hist_file_pattern="{yyyymm}/LIS_HIST_{yyyymmdd}0000.d01.grb2"
+
     ## verify that required files/directories exist
     assert sportlis_parent_dir.exists(),sportlis_parent_dir
     assert latlon_file.exists(),latlon_file
@@ -121,10 +125,6 @@ if __name__=="__main__":
     assert hist_parent_dir.exists(),hist_parent_dir
     assert shapefile.exists(),shapefile
     assert poly_raster_dir.exists(),poly_raster_dir
-
-    ## sc1 file naming scheme. supports yyyy, yyyymm, and yyyymmdd templates
-    percentile_file_pattern="{yyyy}/vsm_percentile_{yyyymmdd}.grb2"
-    hist_file_pattern="{yyyymm}/LIS_HIST_{yyyymmdd}0000.d01.grb2"
 
     ## labels of soil layers. these are progressively integrated from first to
     ## last given the depths when integrate_layers is set to True.
