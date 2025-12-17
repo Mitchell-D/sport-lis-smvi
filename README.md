@@ -2,10 +2,10 @@
 
 Modules for calculating and visualizing soil moisture volatility
 index based on SPoRT-LIS data
-
-| County-wise SMVI | Pixelwise SMVI & Percentile |
-| -- | -- |
-| <img src="https://raw.githubusercontent.com/Mitchell-D/sport-lis-smvi/main/figures/sportlis_smvi_la_20230606-20231031_anim_mitchell-binary.gif" width=100%> | <img src="https://raw.githubusercontent.com/Mitchell-D/sport-lis-smvi/main/figures/sportlis_smvi_la_20230606-20231031_anim_mitchell-pixelwise.gif" width=100%>|
+<p align="center">
+   <img src="https://raw.githubusercontent.com/Mitchell-D/sport-lis-smvi/main/figures/sportlis_smvi_la_20230606-20231031_anim_mitchell-binary.gif" width=60%>
+   <img src="https://raw.githubusercontent.com/Mitchell-D/sport-lis-smvi/main/figures/sportlis_smvi_la_20230606-20231031_anim_mitchell-pixelwise.gif" width=60%>
+</p>
 
 ## adpating this code
 
